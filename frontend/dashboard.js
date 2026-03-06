@@ -1,0 +1,443 @@
+// RANC Auto Inspector Dashboard - JavaScript Logic
+// 주요 함수: updateDashboard(data)
+
+// ==================== 전역 상태 ====================
+let history = [];
+const LIMITS = {
+    vrms_min: 468.6 / 8192,  // 약 0.0572
+    vrms_max: 572.7 / 8192   // 약 0.0699
+};
+
+// 파생된 Limit 계산
+function calculateDerivedLimits() {
+    return {
+        vrms: { min: LIMITS.vrms_min, max: LIMITS.vrms_max },
+        lsb: {
+            min: LIMITS.vrms_min * 8192,
+            max: LIMITS.vrms_max * 8192
+        },
+        sens: {
+            min: 20 * Math.log10(LIMITS.vrms_min),
+            max: 20 * Math.log10(LIMITS.vrms_max)
+        },
+        g: {
+            min: LIMITS.vrms_min * 16,
+            max: LIMITS.vrms_max * 16
+        }
+    };
+}
+
+// ==================== DOM 요소 참조 ====================
+const elements = {
+    // 헤더 정보
+    currentFilename: document.getElementById('current-filename'),
+    currentTimestamp: document.getElementById('current-timestamp'),
+    
+    // 판정 영역
+    judgementBadge: document.getElementById('judgement-badge'),
+    judgementText: document.querySelector('#judgement-badge .judgement-badge'),
+    judgementVrms: document.getElementById('judgement-vrms'),
+    judgementLsb: document.getElementById('judgement-lsb'),
+    
+    // 데이터 카드
+    cardVrms: document.getElementById('card-vrms'),
+    cardLsb: document.getElementById('card-lsb'),
+    cardSens: document.getElementById('card-sens'),
+    cardG: document.getElementById('card-g'),
+    
+    // Limit 표시 요소
+    limitVrms: document.getElementById('limit-vrms'),
+    limitLsb: document.getElementById('limit-lsb'),
+    limitSens: document.getElementById('limit-sens'),
+    limitG: document.getElementById('limit-g'),
+    
+    // 히스토리 테이블
+    historyBody: document.getElementById('history-body'),
+    historyEmpty: document.getElementById('history-empty'),
+    
+    // 버튼
+    simulateBtn: document.getElementById('simulate-btn'),
+    clearHistoryBtn: document.getElementById('clear-history')
+};
+
+// ==================== 유틸리티 함수 ====================
+
+/**
+ * 현재 시간을 포맷팅된 문자열로 반환
+ */
+function getCurrentTimestamp() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} KST`;
+}
+
+/**
+ * 파일명 생성기 (시뮬레이션용)
+ */
+function generateFilename() {
+    const prefixes = ['96398XGR500X', '96398XGR501X', '96399XGR500X'];
+    const date = new Date();
+    const dateStr = `${date.getFullYear().toString().slice(2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    return `${prefix}${dateStr}X${randomNum}.csv`;
+}
+
+/**
+ * Vrms 값으로부터 LSB, SENS, g 계산
+ */
+function calculateValues(vrms) {
+    const lsb = vrms * 8192;
+    const sens = vrms > 0 ? 20 * Math.log10(vrms) : -Infinity;
+    const g = vrms * 16;
+    return { lsb, sens, g };
+}
+
+/**
+ * Vrms 값으로 판정 (PASS/FAIL)
+ */
+function judgeVrms(vrms) {
+    return (vrms >= LIMITS.vrms_min && vrms <= LIMITS.vrms_max) ? 'PASS' : 'FAIL';
+}
+
+/**
+ * 숫자를 지정된 소수점 자리로 포맷팅
+ */
+function formatNumber(num, decimals = 4) {
+    if (typeof num !== 'number' || isNaN(num)) return 'N/A';
+    return num.toFixed(decimals);
+}
+
+// ==================== 핵심 함수: updateDashboard ====================
+
+/**
+ * 대시보드 전체를 새로운 데이터로 업데이트
+ * @param {Object} data - 업데이트할 데이터 객체
+ *   {
+ *     timestamp: "2026-03-05 14:30:25",
+ *     filename: "96398XGR500X251215X052.csv",
+ *     judgement: "PASS",
+ *     values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
+ *     limits: { vrms_min: 0.0572, vrms_max: 0.0699 }
+ *   }
+ */
+function updateDashboard(data) {
+    console.log('대시보드 업데이트:', data);
+    
+    // 1. 헤더 정보 업데이트
+    elements.currentFilename.textContent = data.filename;
+    elements.currentTimestamp.textContent = data.timestamp;
+    
+    // 2. 판정 영역 업데이트
+    updateJudgementBadge(data.judgement, data.values.vrms);
+    
+    // 3. 데이터 카드 업데이트
+    updateValueCards(data.values);
+    
+    // 4. Limit 표시 업데이트
+    updateLimitDisplays();
+    
+    // 5. 히스토리 테이블에 추가
+    addToHistoryTable(data);
+    
+    // 6. 시각적 피드백
+    highlightNewData();
+}
+
+/**
+ * 판정 배지 업데이트
+ */
+function updateJudgementBadge(judgement, vrms) {
+    const badge = elements.judgementBadge;
+    const textEl = elements.judgementText;
+    
+    // 클래스 및 스타일 업데이트
+    badge.classList.remove('pulse-pass', 'pulse-fail');
+    if (judgement === 'PASS') {
+        badge.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+        badge.classList.add('pulse-pass');
+        textEl.innerHTML = 'PASS';
+    } else {
+        badge.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        badge.classList.add('pulse-fail');
+        textEl.innerHTML = 'FAIL';
+    }
+    
+    // Vrms 값 업데이트
+    elements.judgementVrms.textContent = formatNumber(vrms, 6);
+    // LSB 값 계산 및 업데이트
+    const lsb = vrms * 8192;
+    elements.judgementLsb.textContent = formatNumber(lsb, 2);
+}
+
+/**
+ * 데이터 카드 업데이트
+ */
+function updateValueCards(values) {
+    elements.cardVrms.textContent = formatNumber(values.vrms, 6);
+    elements.cardLsb.textContent = formatNumber(values.lsb, 2);
+    elements.cardSens.textContent = formatNumber(values.sens, 2);
+    elements.cardG.textContent = formatNumber(values.g, 3);
+}
+
+/**
+ * Limit 표시 업데이트
+ */
+function updateLimitDisplays() {
+    const limits = calculateDerivedLimits();
+    elements.limitVrms.textContent = `${formatNumber(limits.vrms.min, 4)} ~ ${formatNumber(limits.vrms.max, 4)}`;
+    elements.limitLsb.textContent = `${formatNumber(limits.lsb.min, 2)} ~ ${formatNumber(limits.lsb.max, 2)}`;
+    elements.limitSens.textContent = `${formatNumber(limits.sens.min, 2)} ~ ${formatNumber(limits.sens.max, 2)}`;
+    elements.limitG.textContent = `${formatNumber(limits.g.min, 4)} ~ ${formatNumber(limits.g.max, 4)}`;
+}
+
+/**
+ * 히스토리 테이블에 새 행 추가
+ */
+function addToHistoryTable(data) {
+    // 빈 상태 메시지 숨기기
+    elements.historyEmpty.style.display = 'none';
+    
+    // 새 행 생성
+    const row = document.createElement('tr');
+    row.className = 'fade-in';
+    row.innerHTML = `
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${data.timestamp}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">${data.filename}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.vrms, 6)}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.lsb, 2)}</td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
+                ${data.judgement === 'PASS' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                ${data.judgement}
+            </span>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            <button class="text-blue-600 hover:text-blue-900 mr-3" onclick="replayData(this)">
+                <i class="fas fa-redo"></i>
+            </button>
+            <button class="text-red-600 hover:text-red-900" onclick="deleteRow(this)">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
+    `;
+    
+    // 테이블 상단에 추가
+    elements.historyBody.insertBefore(row, elements.historyBody.firstChild);
+    
+    // 히스토리 배열에 저장 (최대 20개)
+    history.unshift(data);
+    if (history.length > 20) {
+        history.pop();
+        // DOM에서도 마지막 행 제거
+        if (elements.historyBody.children.length > 20) {
+            elements.historyBody.removeChild(elements.historyBody.lastChild);
+        }
+    }
+}
+
+/**
+ * 새 데이터 추가 시 시각적 강조 효과
+ */
+function highlightNewData() {
+    // 카드에 강조 효과
+    const cards = document.querySelectorAll('[id^="card-"]');
+    cards.forEach(card => {
+        card.classList.add('text-blue-600');
+        setTimeout(() => {
+            card.classList.remove('text-blue-600');
+        }, 1000);
+    });
+    
+    // 판정 배지에 펄스 효과 강화
+    const badge = elements.judgementBadge;
+    badge.style.transform = 'scale(1.02)';
+    setTimeout(() => {
+        badge.style.transform = 'scale(1)';
+    }, 300);
+}
+
+// ==================== 시뮬레이션 및 테스트 기능 ====================
+
+/**
+ * 랜덤 데이터 생성 (시뮬레이션용)
+ */
+function generateRandomData() {
+    const vrms = Math.random() * 0.1; // 0 ~ 0.1 사이 랜덤
+    const { lsb, sens, g } = calculateValues(vrms);
+    const judgement = judgeVrms(vrms);
+    
+    return {
+        timestamp: getCurrentTimestamp(),
+        filename: generateFilename(),
+        judgement: judgement,
+        values: { vrms, lsb, sens, g },
+        limits: LIMITS
+    };
+}
+
+/**
+ * 시뮬레이션 버튼 클릭 핸들러
+ */
+function simulateNewData() {
+    const data = generateRandomData();
+    updateDashboard(data);
+    
+    // 버튼에 피드백
+    const btn = elements.simulateBtn;
+    btn.innerHTML = '<i class="fas fa-check mr-2"></i>데이터 생성됨!';
+    btn.classList.remove('bg-blue-600');
+    btn.classList.add('bg-green-600');
+    
+    setTimeout(() => {
+        btn.innerHTML = '<i class="fas fa-bolt mr-2"></i>새 데이터 시뮬레이션';
+        btn.classList.remove('bg-green-600');
+        btn.classList.add('bg-blue-600');
+    }, 1500);
+}
+
+/**
+ * 히스토리 테이블 행 삭제
+ */
+function deleteRow(button) {
+    const row = button.closest('tr');
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(20px)';
+    row.style.transition = 'all 0.3s ease';
+    
+    setTimeout(() => {
+        row.remove();
+        // 테이블이 비었으면 빈 상태 메시지 표시
+        if (elements.historyBody.children.length === 0) {
+            elements.historyEmpty.style.display = 'block';
+        }
+    }, 300);
+}
+
+/**
+ * 히스토리 데이터 재생 (재적용)
+ */
+function replayData(button) {
+    const row = button.closest('tr');
+    const filename = row.children[1].textContent;
+    const vrms = parseFloat(row.children[2].textContent);
+    
+    // 해당 데이터 찾기
+    const originalData = history.find(item => item.filename === filename);
+    if (originalData) {
+        // 데이터 재적용
+        updateDashboard({
+            ...originalData,
+            timestamp: getCurrentTimestamp() // 현재 시간으로 업데이트
+        });
+        
+        // 버튼 피드백
+        button.innerHTML = '<i class="fas fa-check text-green-600"></i>';
+        setTimeout(() => {
+            button.innerHTML = '<i class="fas fa-redo"></i>';
+        }, 1000);
+    }
+}
+
+/**
+ * 히스토리 테이블 전체 지우기
+ */
+function clearHistory() {
+    elements.historyBody.innerHTML = '';
+    elements.historyEmpty.style.display = 'block';
+    history = [];
+    
+    // 버튼 피드백
+    elements.clearHistoryBtn.innerHTML = '<i class="fas fa-check mr-2"></i>기록 삭제됨';
+    setTimeout(() => {
+        elements.clearHistoryBtn.innerHTML = '<i class="fas fa-trash-alt mr-2"></i>기록 지우기';
+    }, 1500);
+}
+
+// ==================== 초기화 ====================
+
+/**
+ * 초기 더미 데이터로 대시보드 설정
+ */
+function initializeDashboard() {
+    const initialData = {
+        timestamp: getCurrentTimestamp(),
+        filename: "96398XGR500X251215X052.csv",
+        judgement: "PASS",
+        values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
+        limits: LIMITS
+    };
+    
+    updateDashboard(initialData);
+    updateLimitDisplays(); // 초기 Limit 표시 업데이트
+    
+    // 추가로 몇 개의 히스토리 데이터 생성
+    for (let i = 0; i < 3; i++) {
+        const pastData = generateRandomData();
+        pastData.timestamp = new Date(Date.now() - (i + 1) * 60000).toISOString()
+            .replace('T', ' ')
+            .replace(/\..*/, '') + ' KST';
+        addToHistoryTable(pastData);
+    }
+}
+
+/**
+ * 이벤트 리스너 등록
+ */
+function setupEventListeners() {
+    // 시뮬레이션 버튼
+    elements.simulateBtn.addEventListener('click', simulateNewData);
+    
+    // 히스토리 지우기 버튼
+    elements.clearHistoryBtn.addEventListener('click', clearHistory);
+    
+    // 키보드 단축키
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'r' || e.key === 'R') {
+            simulateNewData();
+        }
+        if (e.key === 'Escape') {
+            clearHistory();
+        }
+    });
+    
+    // 주기적 자동 시뮬레이션 (옵션)
+    // setInterval(simulateNewData, 10000); // 10초마다 자동 업데이트
+}
+
+// ==================== 문서 로드 완료 시 실행 ====================
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('RANC 대시보드 초기화 중...');
+    
+    // 글로벌 함수 노출 (HTML 인라인 이벤트에서 사용)
+    window.replayData = replayData;
+    window.deleteRow = deleteRow;
+    
+    initializeDashboard();
+    setupEventListeners();
+    
+    console.log('대시보드 준비 완료! 시뮬레이션 버튼을 클릭하거나 R 키를 눌러 테스트하세요.');
+});
+
+// ==================== 글로벌 함수 (외부에서 호출용) ====================
+
+/**
+ * 외부에서 호출 가능한 대시보드 업데이트 함수
+ * 예: WebSocket 메시지 수신 시 updateDashboard(data) 호출
+ */
+window.updateDashboard = updateDashboard;
+
+/**
+ * 외부에서 대시보드 상태 확인용
+ */
+window.getDashboardState = () => ({
+    historyCount: history.length,
+    currentJudgement: elements.judgementText?.textContent || 'UNKNOWN',
+    lastUpdate: elements.currentTimestamp?.textContent || ''
+});

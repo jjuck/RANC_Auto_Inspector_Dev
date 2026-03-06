@@ -1,0 +1,11 @@
+# RANC Auto Inspector Daemon 의존성
+# Python 3.9+ 호환
+
+# 파일 시스템 감시
+watchdog>=3.0.0
+
+# CSV 파일 처리
+pandas>=2.0.0
+
+# 선택적: 환경 변수 관리 (향후 확장용)
+python-dotenv>=1.0.0

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RANC Auto Inspector Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <!-- Google Fonts: Roboto Mono for monospace numbers -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Custom CSS for animations -->
+    <style>
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0); }
+            50% { box-shadow: 0 0 40px rgba(16, 185, 129, 0.7); }
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0); }
+            50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.7); }
+        }
+        .pulse-pass {
+            animation: pulse-green 2s infinite;
+        }
+        .pulse-fail {
+            animation: pulse-red 2s infinite;
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            transition: all 0.3s ease;
+        }
+        .fade-in {
+            animation: fadeIn 0.8s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .judgement-badge {
+            font-size: 8rem;
+            font-weight: 900;
+            text-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        }
+        @media (max-width: 768px) {
+            .judgement-badge {
+                font-size: 5rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between">
+                <div class="flex items-center space-x-3 mb-4 md:mb-0">
+                    <div class="bg-blue-100 p-3 rounded-xl">
+                        <i class="fas fa-microchip text-blue-600 text-2xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">RANC Auto Inspector Dashboard</h1>
+                        <p class="text-gray-500 text-sm">실시간 센서 데이터 판정 모니터링</p>
+                    </div>
+                </div>
+                <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 min-w-[300px]">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">최근 검사 정보</h2>
+                            <div class="mt-2">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-file-csv text-blue-500"></i>
+                                    <span id="current-filename" class="text-lg font-bold text-gray-900 mono">96398XGR500X251215X052.csv</span>
+                                </div>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <i class="far fa-clock text-gray-400"></i>
+                                    <span id="current-timestamp" class="text-gray-700">2026-03-05 14:30:25 KST</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="simulate-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                            <i class="fas fa-bolt mr-2"></i>새 데이터 시뮬레이션
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-8">
+        <!-- Main Judgement Area -->
+        <section class="mb-12">
+            <div id="judgement-badge" class="rounded-2xl p-12 text-center text-white pulse-pass fade-in"
+                 style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <div class="judgement-badge">PASS</div>
+                <div class="mt-8 text-5xl font-extrabold mono">
+                    LSB = <span id="judgement-lsb" class="text-white">512.0</span>
+                </div>
+                <div class="mt-4 text-lg mono opacity-90">
+                    Vrms = <span id="judgement-vrms" class="font-bold">0.0625</span>
+                    (범위: 0.0572 ~ 0.0699)
+                </div>
+            </div>
+        </section>
+
+        <!-- Data Cards Grid -->
+        <section class="mb-12">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Vrms Card -->
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-blue-100 p-3 rounded-xl">
+                            <i class="fas fa-wave-square text-blue-600 text-2xl"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">기본값</span>
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-gray-900 mb-4">Vrms</h3>
+                    <div class="mb-4">
+                        <div class="text-4xl font-bold text-gray-900 mono" id="card-vrms">0.0625</div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="text-sm text-gray-600">
+                            <i class="fas fa-ruler-combined mr-2"></i>
+                            허용 기준: <span id="limit-vrms" class="font-bold mono">0.0572 ~ 0.0699</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LSB Card -->
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-green-100 p-3 rounded-xl">
+                            <i class="fas fa-digital-tachograph text-green-600 text-2xl"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-green-600 bg-green-50 px-3 py-1 rounded-full">변환값</span>
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-gray-900 mb-4">LSB</h3>
+                    <div class="mb-4">
+                        <div class="text-4xl font-bold text-gray-900 mono" id="card-lsb">512.0</div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="text-sm text-gray-600">
+                            <i class="fas fa-ruler-combined mr-2"></i>
+                            허용 기준: <span id="limit-lsb" class="font-bold mono">468.6 ~ 572.7</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SENS Card -->
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-purple-100 p-3 rounded-xl">
+                            <i class="fas fa-volume-up text-purple-600 text-2xl"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-purple-600 bg-purple-50 px-3 py-1 rounded-full">로그값</span>
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-gray-900 mb-4">SENS</h3>
+                    <div class="mb-4">
+                        <div class="text-4xl font-bold text-gray-900 mono" id="card-sens">-24.08</div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="text-sm text-gray-600">
+                            <i class="fas fa-ruler-combined mr-2"></i>
+                            허용 기준: <span id="limit-sens" class="font-bold mono">-24.88 ~ -23.11</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- g Card -->
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-amber-100 p-3 rounded-xl">
+                            <i class="fas fa-weight-hanging text-amber-600 text-2xl"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">가속도</span>
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-gray-900 mb-4">g</h3>
+                    <div class="mb-4">
+                        <div class="text-4xl font-bold text-gray-900 mono" id="card-g">1.0</div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="text-sm text-gray-600">
+                            <i class="fas fa-ruler-combined mr-2"></i>
+                            허용 기준: <span id="limit-g" class="font-bold mono">0.9152 ~ 1.1184</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- History Table -->
+        <section class="mb-12">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-3xl font-bold text-gray-900">최근 검사 기록</h2>
+                <button id="clear-history" class="text-gray-500 hover:text-gray-700 text-sm font-medium">
+                    <i class="fas fa-trash-alt mr-2"></i>기록 지우기
+                </button>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vrms</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LSB</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judgement</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be inserted by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bg-gray-50 px-6 py-3 text-center text-sm text-gray-500" id="history-empty">
+                    <i class="fas fa-history mr-2"></i>검사 기록이 없습니다. 새 CSV 파일이 처리되면 여기에 나타납니다.
+                </div>
+            </div>
+        </section>
+
+        <!-- Info Panel -->
+        <section class="bg-blue-50 border border-blue-200 rounded-2xl p-6">
+            <div class="flex items-center">
+                <div class="bg-blue-100 p-3 rounded-xl mr-4">
+                    <i class="fas fa-info-circle text-blue-600 text-2xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-gray-900">대시보드 사용 안내</h3>
+                    <p class="text-gray-700 mt-2">
+                        이 대시보드는 로컬 데몬(CSV 처리 및 판정)의 결과를 실시간으로 시각화합니다. 
+                        새로운 CSV 파일이 <code class="bg-gray-100 px-2 py-1 rounded">data/input_logs/</code>에 생성되면 자동으로 감지되어 판정 결과가 업데이트됩니다.
+                        현재는 정적 프로토타입으로, "새 데이터 시뮬레이션" 버튼을 클릭하여 다양한 데이터로 테스트할 수 있습니다.
+                    </p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-gray-200 bg-white py-6 mt-12">
+        <div class="container mx-auto px-6">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="text-gray-500 text-sm">
+                    <p>© 2026 RANC Auto Inspector System. All rights reserved.</p>
+                    <p class="mt-1">Phase 1: 로컬 데몬 + 대시보드 프로토타입</p>
+                </div>
+                <div class="flex space-x-4 mt-4 md:mt-0">
+                    <a href="#" class="text-gray-400 hover:text-blue-600">
+                        <i class="fab fa-github text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-blue-600">
+                        <i class="fas fa-book text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-blue-600">
+                        <i class="fas fa-cog text-xl"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="dashboard.js"></script>
+</body>
+</html>
