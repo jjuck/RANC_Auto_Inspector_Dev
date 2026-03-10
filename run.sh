@@ -28,8 +28,11 @@ echo "새 CSV 파일을 data/input_logs/에 놓으면 자동으로 처리됩니�
 echo "종료하려면 Ctrl+C를 누르세요."
 echo ""
 
-# 메인 프로그램 실행
-python src/main.py "$@"
+# 통합 서버 실행 (FastAPI + WebSocket + 프론트엔드)
+echo "통합 서버 시작: http://localhost:8000"
+echo "대시보드 접속: http://localhost:8000/"
+echo ""
+python -m src.integrated_server "$@"
 
 # 오류 코드 확인
 if [ $? -ne 0 ]; then

@@ -38,6 +38,7 @@ const elements = {
     judgementText: document.querySelector('#judgement-badge .judgement-badge'),
     judgementVrms: document.getElementById('judgement-vrms'),
     judgementLsb: document.getElementById('judgement-lsb'),
+    judgementLsbRange: document.getElementById('judgement-lsb-range'),
     
     // 데이터 카드
     cardVrms: document.getElementById('card-vrms'),
@@ -168,11 +169,13 @@ function updateJudgementBadge(judgement, vrms) {
         textEl.innerHTML = 'FAIL';
     }
     
-    // Vrms 값 업데이트
-    elements.judgementVrms.textContent = formatNumber(vrms, 6);
     // LSB 값 계산 및 업데이트
     const lsb = vrms * 8192;
     elements.judgementLsb.textContent = formatNumber(lsb, 2);
+    
+    // LSB 범위 업데이트
+    const limits = calculateDerivedLimits();
+    elements.judgementLsbRange.textContent = `${formatNumber(limits.lsb.min, 1)} ~ ${formatNumber(limits.lsb.max, 1)}`;
 }
 
 /**
@@ -422,8 +425,140 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeDashboard();
     setupEventListeners();
     
+    // WebSocket 연결 시작
+    console.log('WebSocket 연결 시도 중...');
+    connectWebSocket();
+    
     console.log('대시보드 준비 완료! 시뮬레이션 버튼을 클릭하거나 R 키를 눌러 테스트하세요.');
 });
+
+// ==================== WebSocket 클라이언트 ====================
+
+let websocket = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_DELAY = 2000; // 2초
+
+/**
+ * WebSocket 연결 설정
+ */
+function connectWebSocket() {
+    // 동적 WebSocket URL 생성: 현재 브라우저의 호스트와 포트 사용
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    try {
+        websocket = new WebSocket(wsUrl);
+        
+        websocket.onopen = function(event) {
+            console.log('WebSocket 연결 성공:', wsUrl);
+            reconnectAttempts = 0;
+            updateConnectionStatus(true);
+        };
+        
+        websocket.onmessage = function(event) {
+            try {
+                const message = JSON.parse(event.data);
+                console.log('WebSocket 메시지 수신:', message);
+                
+                if (message.type === 'new_result') {
+                    // 백엔드에서 전송된 결과 데이터를 대시보드 형식으로 변환
+                    const dashboardData = {
+                        timestamp: message.data.timestamp,
+                        filename: message.data.input_file,
+                        judgement: message.data.judgement,
+                        values: {
+                            vrms: message.data.vrms,
+                            lsb: message.data.lsb,
+                            sens: message.data.sens,
+                            g: message.data.g
+                        },
+                        limits: {
+                            vrms_min: message.data.lower_bound,
+                            vrms_max: message.data.upper_bound
+                        }
+                    };
+                    
+                    // 대시보드 업데이트
+                    updateDashboard(dashboardData);
+                    
+                    // 히스토리에도 추가
+                    addToHistoryTable(dashboardData);
+                } else if (message.type === 'system_status') {
+                    console.log('시스템 상태 업데이트:', message.data);
+                    // 필요 시 시스템 상태 UI 업데이트 구현
+                }
+            } catch (error) {
+                console.error('WebSocket 메시지 처리 오류:', error);
+            }
+        };
+        
+        websocket.onclose = function(event) {
+            console.log('WebSocket 연결 종료:', event.code, event.reason);
+            updateConnectionStatus(false);
+            
+            // 자동 재연결 시도
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                console.log(`재연결 시도 중... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                setTimeout(connectWebSocket, RECONNECT_DELAY);
+            } else {
+                console.error('최대 재연결 시도 횟수 초과. 수동 재연결 필요.');
+            }
+        };
+        
+        websocket.onerror = function(error) {
+            console.error('WebSocket 오류:', error);
+            updateConnectionStatus(false);
+        };
+        
+    } catch (error) {
+        console.error('WebSocket 연결 실패:', error);
+        updateConnectionStatus(false);
+        
+        // 재연결 시도
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            console.log(`재연결 시도 중... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+            setTimeout(connectWebSocket, RECONNECT_DELAY);
+        }
+    }
+}
+
+/**
+ * 연결 상태 UI 업데이트
+ */
+function updateConnectionStatus(connected) {
+    const statusIndicator = document.getElementById('connection-status');
+    if (!statusIndicator) {
+        // 상태 표시기가 없으면 생성
+        const header = document.querySelector('header .container');
+        if (header) {
+            const statusDiv = document.createElement('div');
+            statusDiv.id = 'connection-status';
+            statusDiv.className = 'ml-4 px-3 py-1 rounded-full text-sm font-medium';
+            statusDiv.textContent = connected ? '실시간 연결됨' : '연결 끊김';
+            statusDiv.style.backgroundColor = connected ? '#10b981' : '#ef4444';
+            statusDiv.style.color = 'white';
+            header.appendChild(statusDiv);
+        }
+        return;
+    }
+    
+    statusIndicator.textContent = connected ? '실시간 연결됨' : '연결 끊김';
+    statusIndicator.style.backgroundColor = connected ? '#10b981' : '#ef4444';
+}
+
+/**
+ * WebSocket 연결 수동 재시작
+ */
+function reconnectWebSocket() {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.close();
+    }
+    reconnectAttempts = 0;
+    connectWebSocket();
+}
 
 // ==================== 글로벌 함수 (외부에서 호출용) ====================
 
@@ -434,10 +569,16 @@ document.addEventListener('DOMContentLoaded', () => {
 window.updateDashboard = updateDashboard;
 
 /**
+ * WebSocket 연결 재시작 함수 (글로벌 노출)
+ */
+window.reconnectWebSocket = reconnectWebSocket;
+
+/**
  * 외부에서 대시보드 상태 확인용
  */
 window.getDashboardState = () => ({
     historyCount: history.length,
     currentJudgement: elements.judgementText?.textContent || 'UNKNOWN',
-    lastUpdate: elements.currentTimestamp?.textContent || ''
+    lastUpdate: elements.currentTimestamp?.textContent || '',
+    websocketConnected: websocket ? websocket.readyState === WebSocket.OPEN : false
 });
