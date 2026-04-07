@@ -39,7 +39,7 @@ echo.
 
 REM [핵심 2] 브라우저 자동 실행 (백그라운드에서 2초 대기 후 실행)
 echo [3/4] 대시보드 브라우저 자동 실행 대기 중...
-start /B cmd /c "timeout /t 2 > nul & start http://localhost:8000"
+start /B cmd /c "timeout /t 2 > nul & start http://localhost:8000/alt"
 echo.
 
 REM 통합 서버 실행

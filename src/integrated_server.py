@@ -32,6 +32,7 @@ from src.file_watcher import FileWatcher
 # 프로젝트 루트 디렉토리 계산
 PROJECT_ROOT = Path(__file__).parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
+ALT_FRONTEND_DIR = PROJECT_ROOT / "frontend_alt"
 DATA_DIR = PROJECT_ROOT / "data"
 INPUT_DIR = DATA_DIR / "input_logs"
 OUTPUT_DIR = DATA_DIR / "output_results"
@@ -41,6 +42,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
+ALT_FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
 
 # 로깅 설정
 logging.basicConfig(
@@ -312,22 +314,40 @@ app = FastAPI(
 
 
 # FastAPI 라우트 정의
+def serve_frontend_file(frontend_dir: Path, filename: str) -> FileResponse | HTMLResponse:
+    """지정된 프론트엔드 디렉토리에서 파일 서빙"""
+    target_path = frontend_dir / filename
+    if not target_path.exists():
+        return HTMLResponse(content=f"<h1>{filename} 파일을 찾을 수 없습니다.</h1>", status_code=404)
+    response = FileResponse(target_path)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
-    """대시보드 메인 페이지 서빙"""
-    index_path = FRONTEND_DIR / "index.html"
-    if not index_path.exists():
-        return HTMLResponse(content="<h1>대시보드 파일을 찾을 수 없습니다.</h1>", status_code=404)
-    return FileResponse(index_path)
+    """기본 대시보드 메인 페이지 서빙"""
+    return serve_frontend_file(FRONTEND_DIR, "index.html")
+
+
+@app.get("/alt", response_class=HTMLResponse)
+async def serve_alt_index():
+    """대체 디자인 대시보드 메인 페이지 서빙"""
+    return serve_frontend_file(ALT_FRONTEND_DIR, "index.html")
 
 
 @app.get("/dashboard.js")
 async def serve_dashboard_js():
-    """대시보드 JavaScript 파일 서빙"""
-    js_path = FRONTEND_DIR / "dashboard.js"
-    if not js_path.exists():
-        return HTMLResponse(content="// 파일을 찾을 수 없습니다.", status_code=404)
-    return FileResponse(js_path)
+    """기본 대시보드 JavaScript 파일 서빙"""
+    return serve_frontend_file(FRONTEND_DIR, "dashboard.js")
+
+
+@app.get("/alt/dashboard.js")
+async def serve_alt_dashboard_js():
+    """대체 디자인 대시보드 JavaScript 파일 서빙"""
+    return serve_frontend_file(ALT_FRONTEND_DIR, "dashboard.js")
 
 
 @app.get("/health")
