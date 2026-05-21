@@ -1,0 +1,31 @@
+"RMS Level","RMS Level",,,,
+Channel,"RMS Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"
+,dBFS,dBFS,,dBFS,
+Ch1,-55.085314388487,,True,,True
+Ch2,-53.9899371144151,,True,,True
+
+Gain,Gain,,,,
+Channel,Gain,"Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"
+,FS/Vrms,FS/Vrms,,FS/Vrms,
+Ch1,0.0176089832592464,,True,,True
+Ch2,0.0199757523077613,,True,,True
+
+"Noise Level","Noise Level",,,,
+Channel,"Noise Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"
+,FS,FS,,FS,
+Ch1,0.00177202812042252,,True,,True
+Ch2,0.0019964198465005,,True,,True
+
+"Summary: RMS Level",,,,,
+Channel,"Passed Lower Limit","Passed Upper Limit",,,
+Ch1,Passed,Passed,,,
+Ch2,Passed,Passed,,,
+"Summary: Gain",,,,,
+Channel,"Passed Lower Limit","Passed Upper Limit",,,
+Ch1,Passed,Passed,,,
+Ch2,Passed,Passed,,,
+"Summary: Noise Level",,,,,
+Channel,"Passed Lower Limit","Passed Upper Limit",,,
+Ch1,Passed,Passed,,,
+Ch2,Passed,Passed,,,
+
