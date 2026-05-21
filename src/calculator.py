@@ -1,15 +1,64 @@
 """
-Vrms 값 변환 계산 모듈
+Vrms/dBFS 값 변환 계산 모듈
 LSB = Vrms * 8192
 SENS = 20 * log10(Vrms)
 g = Vrms * 16
 """
 
-import math
 import logging
-from typing import Dict, Optional
+import math
+from typing import Dict
 
 logger = logging.getLogger(__name__)
+
+
+def dbfs_to_vrms(dbfs: float) -> float:
+    """
+    dBFS 값을 기존 계산식에서 사용하던 선형 Vrms 비율로 변환
+    
+    Args:
+        dbfs: 입력 dBFS 값 (float)
+        
+    Returns:
+        선형 Vrms 비율
+    """
+    return math.pow(10, dbfs / 20)
+
+
+def convert_dbfs(dbfs: float) -> Dict[str, float]:
+    """
+    dBFS 값을 받아 기존 Vrms 기반 결과(LSB, SENS, g)로 변환
+    
+    Args:
+        dbfs: 입력 dBFS 값 (float)
+        
+    Returns:
+        변환된 값들을 포함한 딕셔너리:
+        {
+            'lsb': LSB 값
+            'sens': SENS 값(dBFS)
+            'g': g 값
+            'original_dbfs': 원본 dBFS 값
+            'original_vrms': dBFS에서 환산한 선형 Vrms 비율
+        }
+    """
+    vrms = dbfs_to_vrms(dbfs)
+    lsb = vrms * 8192
+    g_value = vrms * 16
+    
+    result = {
+        'lsb': lsb,
+        'sens': dbfs,
+        'g': g_value,
+        'original_dbfs': dbfs,
+        'original_vrms': vrms
+    }
+    
+    logger.debug(
+        f"dBFS 변환 완료: {dbfs:.6f} dBFS -> "
+        f"Vrms={vrms:.6f}, LSB={lsb:.2f}, g={g_value:.6f}"
+    )
+    return result
 
 
 def convert_vrms(vrms: float) -> Dict[str, float]:

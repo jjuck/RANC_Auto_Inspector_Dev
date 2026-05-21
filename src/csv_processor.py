@@ -1,6 +1,6 @@
 """
 CSV 파일 처리 모듈
-B열 4행 (엑셀 기준 B4 셀)에서 Vrms 값을 추출
+RMS Level 섹션에서 Ch1 dBFS 값을 추출
 """
 
 import pandas as pd
@@ -12,10 +12,126 @@ logger = logging.getLogger(__name__)
 
 
 class CSVProcessor:
-    """CSV 파일에서 Vrms 값을 추출하는 클래스"""
+    """CSV 파일에서 측정 값을 추출하는 클래스"""
     
     def __init__(self):
         pass
+
+    @staticmethod
+    def _cell_text(value) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
+
+    def extract_dbfs_from_csv(self, file_path: Path, channel: str = "Ch1") -> Optional[float]:
+        """
+        CSV 파일의 RMS Level 섹션에서 지정 채널의 dBFS 값을 추출
+        
+        Args:
+            file_path: CSV 파일 경로 (Path 객체)
+            channel: 추출할 채널명 (기본값: Ch1)
+            
+        Returns:
+            추출된 dBFS 값 (float), 실패 시 None
+        """
+        try:
+            df = pd.read_csv(file_path, header=None)
+            
+            if df.shape[0] < 4 or df.shape[1] < 2:
+                logger.error(f"CSV 파일 크기가 너무 작습니다: {file_path.name}")
+                return None
+            
+            dbfs_value = self._find_rms_level_dbfs(df, channel)
+            if dbfs_value is None:
+                logger.error(f"RMS Level 섹션에서 {channel} dBFS 값을 찾을 수 없습니다: {file_path.name}")
+                return None
+            
+            logger.debug(f"dBFS 값 추출 성공: {file_path.name} -> {dbfs_value}")
+            return dbfs_value
+                
+        except FileNotFoundError:
+            logger.error(f"파일을 찾을 수 없습니다: {file_path}")
+            return None
+        except pd.errors.EmptyDataError:
+            logger.error(f"CSV 파일이 비어 있습니다: {file_path.name}")
+            return None
+        except pd.errors.ParserError:
+            logger.error(f"CSV 파일 파싱 오류: {file_path.name}")
+            return None
+        except Exception as e:
+            logger.error(f"CSV 파일 처리 중 예상치 못한 오류: {file_path.name}, 오류: {e}")
+            return None
+
+    def extract_noise_level_from_csv(self, file_path: Path, channel: str = "Ch1") -> Optional[float]:
+        """
+        CSV 파일의 Noise Level 섹션에서 지정 채널의 FS 값을 추출
+        
+        Args:
+            file_path: CSV 파일 경로 (Path 객체)
+            channel: 추출할 채널명 (기본값: Ch1)
+            
+        Returns:
+            추출된 Noise Level 값 (float), 실패 시 None
+        """
+        try:
+            df = pd.read_csv(file_path, header=None)
+            
+            if df.shape[0] < 4 or df.shape[1] < 2:
+                logger.error(f"CSV 파일 크기가 너무 작습니다: {file_path.name}")
+                return None
+            
+            noise_level = self._find_measurement_value(df, "Noise Level", "fs", channel)
+            if noise_level is None:
+                logger.error(f"Noise Level 섹션에서 {channel} FS 값을 찾을 수 없습니다: {file_path.name}")
+                return None
+            
+            logger.debug(f"Noise Level 값 추출 성공: {file_path.name} -> {noise_level}")
+            return noise_level
+                
+        except FileNotFoundError:
+            logger.error(f"파일을 찾을 수 없습니다: {file_path}")
+            return None
+        except pd.errors.EmptyDataError:
+            logger.error(f"CSV 파일이 비어 있습니다: {file_path.name}")
+            return None
+        except pd.errors.ParserError:
+            logger.error(f"CSV 파일 파싱 오류: {file_path.name}")
+            return None
+        except Exception as e:
+            logger.error(f"CSV 파일 처리 중 예상치 못한 오류: {file_path.name}, 오류: {e}")
+            return None
+
+    def _find_rms_level_dbfs(self, df: pd.DataFrame, channel: str) -> Optional[float]:
+        return self._find_measurement_value(df, "RMS Level", "dbfs", channel)
+
+    def _find_measurement_value(
+        self,
+        df: pd.DataFrame,
+        measurement_name: str,
+        unit_name: str,
+        channel: str
+    ) -> Optional[float]:
+        for header_row in range(len(df) - 2):
+            first_cell = self._cell_text(df.iloc[header_row, 0])
+            second_cell = self._cell_text(df.iloc[header_row, 1])
+            unit_cell = self._cell_text(df.iloc[header_row + 1, 1]).lower()
+            
+            if first_cell != "Channel" or second_cell != measurement_name or unit_cell != unit_name:
+                continue
+            
+            for data_row in range(header_row + 2, len(df)):
+                row_channel = self._cell_text(df.iloc[data_row, 0])
+                if row_channel == channel:
+                    try:
+                        return float(df.iloc[data_row, 1])
+                    except (ValueError, TypeError):
+                        logger.error(f"{channel} {measurement_name} 값이 숫자가 아닙니다: {df.iloc[data_row, 1]}")
+                        return None
+                
+                if row_channel and not row_channel.startswith("Ch"):
+                    break
+        
+        return None
     
     def extract_vrms_from_csv(self, file_path: Path) -> Optional[float]:
         """

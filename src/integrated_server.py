@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 # 프로젝트 모듈 임포트 (전체 상단에 명시)
 from src.csv_processor import CSVProcessor
-from src.calculator import convert_vrms
+from src.calculator import convert_dbfs
 from src.judge import judge_vrms
 from src.result_writer import ResultWriter
 from src.file_watcher import FileWatcher
@@ -106,10 +106,15 @@ class WebSocketManager:
 class AutoInspectorDaemon:
     """자동 감시 및 판정 데몬 클래스 (통합 서버용)"""
     
-    def __init__(self, input_dir: Path, output_dir: Path, websocket_manager: WebSocketManager):
+    def __init__(
+        self,
+        input_dir: Path = INPUT_DIR,
+        output_dir: Path = OUTPUT_DIR,
+        websocket_manager: Optional[WebSocketManager] = None
+    ):
         self.input_dir = input_dir
         self.output_dir = output_dir
-        self.websocket_manager = websocket_manager
+        self.websocket_manager = websocket_manager or WebSocketManager()
         self.processor = CSVProcessor()
         self.writer = ResultWriter(self.output_dir)
         self.watcher: Optional[FileWatcher] = None
@@ -142,17 +147,21 @@ class AutoInspectorDaemon:
         try:
             logger.info(f"새 파일 감지: {file_path.name}")
             
-            # 1. CSV 파일에서 Vrms 값 추출 (B열 4행)
-            vrms_value = self.processor.extract_vrms_from_csv(file_path)
+            # 1. CSV 파일에서 RMS Level dBFS 값 추출
+            dbfs_value = self.processor.extract_dbfs_from_csv(file_path)
             
-            if vrms_value is None:
-                logger.error(f"Vrms 값 추출 실패: {file_path.name}")
+            if dbfs_value is None:
+                logger.error(f"dBFS 값 추출 실패: {file_path.name}")
                 return
                 
-            logger.info(f"Vrms 값 추출 성공: {vrms_value:.6f}")
+            logger.info(f"dBFS 값 추출 성공: {dbfs_value:.6f}")
+
+            # Noise Level은 결과 로그용 부가 측정값입니다.
+            noise_level = self.processor.extract_noise_level_from_csv(file_path)
             
-            # 2. 변환 계산
-            converted = convert_vrms(vrms_value)
+            # 2. dBFS를 기존 Vrms 기반 계산 값으로 변환
+            converted = convert_dbfs(dbfs_value)
+            vrms_value = converted['original_vrms']
             
             # 3. 판정
             judgement = judge_vrms(vrms_value)
@@ -161,6 +170,8 @@ class AutoInspectorDaemon:
             result = {
                 'timestamp': datetime.now().isoformat(),
                 'input_file': file_path.name,
+                'dbfs': dbfs_value,
+                'noise_level': noise_level,
                 'vrms': vrms_value,
                 'lsb': converted['lsb'],
                 'sens': converted['sens'],
@@ -203,6 +214,10 @@ class AutoInspectorDaemon:
         print("="*60)
         print(f"  입력 파일: {result['input_file']}")
         print(f"  처리 시간: {result['timestamp']}")
+        if 'dbfs' in result:
+            print(f"  dBFS 값: {result['dbfs']:.6f}")
+        if result.get('noise_level') is not None:
+            print(f"  Noise Level: {result['noise_level']:.15f}")
         print(f"  Vrms 값: {result['vrms']:.6f}")
         print(f"  LSB: {result['lsb']:.2f}")
         print(f"  SENS: {result['sens']:.2f} dB")

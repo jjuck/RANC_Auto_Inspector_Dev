@@ -31,17 +31,48 @@ class ResultWriter:
         self.fieldnames = [
             'Timestamp',
             'Input_Filename',
+            'dBFS',
             'Vrms',
             'LSB',
             'SENS',
             'g',
-            'Judgement'
+            'Judgement',
+            'Noise_Level'
         ]
         
         # 파일 존재 여부 확인 (헤더 작성 필요 여부)
-        self.file_exists = self.output_file.exists()
+        self.file_exists = self.output_file.exists() and self.output_file.stat().st_size > 0
+        if self.file_exists:
+            self._migrate_header_if_needed()
         
         logger.info(f"결과 저장 위치: {self.output_file.absolute()}")
+
+    def _migrate_header_if_needed(self) -> None:
+        """
+        기존 결과 파일에 새 컬럼이 추가되었을 때 헤더와 기존 행을 보정
+        """
+        try:
+            with open(self.output_file, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                existing_fieldnames = reader.fieldnames or []
+                rows = list(reader)
+            
+            if existing_fieldnames == self.fieldnames:
+                return
+            
+            if not set(existing_fieldnames).issubset(set(self.fieldnames)):
+                logger.warning(f"알 수 없는 결과 CSV 컬럼이 있어 헤더 마이그레이션을 건너뜁니다: {existing_fieldnames}")
+                return
+            
+            with open(self.output_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=self.fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow({field: row.get(field, "") for field in self.fieldnames})
+            
+            logger.info(f"결과 CSV 헤더 마이그레이션 완료: {self.output_file.name}")
+        except Exception as e:
+            logger.error(f"결과 CSV 헤더 마이그레이션 중 오류: {e}")
     
     def save_result(self, result: Dict[str, any]) -> bool:
         """
@@ -117,6 +148,8 @@ class ResultWriter:
         input_filename = result.get('input_file', 'unknown')
         
         # 숫자 값 포맷팅 (소수점 적절히)
+        dbfs = result.get('dbfs')
+        noise_level = result.get('noise_level')
         vrms = float(result.get('vrms', 0))
         lsb = float(result.get('lsb', 0))
         sens = float(result.get('sens', 0))
@@ -128,11 +161,13 @@ class ResultWriter:
         return {
             'Timestamp': timestamp,
             'Input_Filename': input_filename,
+            'dBFS': "" if dbfs is None else f"{float(dbfs):.2f}",
             'Vrms': f"{vrms:.6f}",
             'LSB': f"{lsb:.2f}",
             'SENS': f"{sens:.2f}",
             'g': f"{g_value:.6f}",
-            'Judgement': judgement
+            'Judgement': judgement,
+            'Noise_Level': "" if noise_level is None else f"{float(noise_level):.15f}"
         }
     
     def get_recent_results(self, limit: int = 10) -> List[Dict[str, any]]:

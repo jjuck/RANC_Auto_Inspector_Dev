@@ -16,7 +16,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.integrated_server import AutoInspectorDaemon, main_event_loop, websocket_manager
+from src.integrated_server import AutoInspectorDaemon, WebSocketManager, app_state
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,7 +40,10 @@ async def simulate_file_processing():
     }
     
     # WebSocket 브로드캐스트 호출
-    if main_event_loop is not None and not main_event_loop.is_closed():
+    main_event_loop = app_state.main_event_loop
+    websocket_manager = app_state.websocket_manager
+    
+    if main_event_loop is not None and not main_event_loop.is_closed() and websocket_manager is not None:
         logger.info(f"메인 이벤트 루프 사용: {main_event_loop}")
         
         # 백그라운드 스레드에서 시뮬레이션 (실제 Watchdog 스레드 환경과 유사)
@@ -75,7 +78,11 @@ def test_daemon_handle_new_file():
     """데몬의 _handle_new_file 메서드 직접 테스트"""
     logger.info("데몬 파일 처리 핸들러 테스트...")
     
-    daemon = AutoInspectorDaemon()
+    daemon = AutoInspectorDaemon(
+        input_dir=Path("data/input_logs"),
+        output_dir=Path("data/output_results"),
+        websocket_manager=WebSocketManager()
+    )
     
     # 가상 파일 경로 생성
     test_file = Path("data/input_logs/test_websocket.csv")
@@ -83,11 +90,14 @@ def test_daemon_handle_new_file():
     
     # 테스트 CSV 파일 생성 (올바른 형식)
     with open(test_file, 'w', encoding='utf-8') as f:
-        f.write("ColumnA,ColumnB,ColumnC\n")
-        f.write("1,2,3\n")
-        f.write("4,5,6\n")
-        f.write("7,8,9\n")
-        f.write("10,0.123456,12\n")  # B열 4행에 Vrms 값
+        f.write('"RMS Level","RMS Level",,,,\n')
+        f.write('Channel,"RMS Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"\n')
+        f.write(",dBFS,dBFS,,dBFS,\n")
+        f.write("Ch1,-24.082399653118497,,True,,True\n")
+        f.write('\n"Noise Level","Noise Level",,,,\n')
+        f.write('Channel,"Noise Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"\n')
+        f.write(",FS,FS,,FS,\n")
+        f.write("Ch1,0.00177202812042252,,True,,True\n")
     
     try:
         # _handle_new_file 직접 호출 (백그라운드 스레드 시뮬레이션)

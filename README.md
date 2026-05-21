@@ -4,11 +4,11 @@
 
 ## 개요
 
-RANC Auto Inspector는 생산 공정에서 생성되는 CSV 로그 파일을 실시간으로 감시하고, Vrms 값을 추출하여 판정한 후 대시보드에 실시간으로 표시하는 통합 시스템입니다.
+RANC Auto Inspector는 생산 공정에서 생성되는 CSV 로그 파일을 실시간으로 감시하고, RMS Level dBFS 값을 추출하여 판정한 후 대시보드에 실시간으로 표시하는 통합 시스템입니다.
 
 ### 주요 기능
 - **실시간 파일 감시**: `data/input_logs/` 디렉토리에 새 CSV 파일이 생성되면 자동 감지
-- **자동 처리**: Vrms 값 추출 → LSB/SENS/g 변환 → 합격/불합격 판정
+- **자동 처리**: RMS Level dBFS 및 Noise Level 값 추출 → Vrms/LSB/SENS/g 변환 → 합격/불합격 판정
 - **실시간 대시보드**: WebSocket을 통한 실시간 결과 표시
 - **Zero-Setup 배포**: 단일 실행 파일로 모든 구성 요소 실행
 - **통합 서버**: FastAPI 기반 단일 서버 (HTTP + WebSocket + 정적 파일)
@@ -68,14 +68,20 @@ RANC Auto Inspector는 생산 공정에서 생성되는 CSV 로그 파일을 실
 시스템은 다음 형식의 CSV 파일을 처리합니다:
 
 ```
-ColumnA,ColumnB,ColumnC
-1,2,3
-4,5,6
-7,8,9
-10,0.123456,12  ← B열 4행에 Vrms 값 (0.123456)
+"RMS Level","RMS Level",,,,
+Channel,"RMS Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"
+,dBFS,dBFS,,dBFS,
+Ch1,-24.082399653118497,,True,,True
+Ch2,-34.6442157520136,,True,,True
+
+"Noise Level","Noise Level",,,,
+Channel,"Noise Level","Lower Limit","Passed Lower Limit","Upper Limit","Passed Upper Limit"
+,FS,FS,,FS,
+Ch1,0.00177202812042252,,True,,True
+Ch2,0.0019964198465005,,True,,True
 ```
 
-**중요**: Vrms 값은 B열(B column)의 4번째 행(row)에 위치해야 합니다.
+**중요**: RMS Level 섹션에서 `Ch1` 행의 `RMS Level` 값은 dBFS 단위, Noise Level 섹션에서 `Ch1` 행의 `Noise Level` 값은 FS 단위여야 합니다.
 
 ## 대시보드 기능
 
@@ -149,7 +155,7 @@ RANC_Auto_Inspector_Dev/
 
 #### 3. CSV 파일이 처리되지 않음
 - 파일이 `data/input_logs/` 디렉토리에 있는지 확인
-- CSV 형식이 올바른지 확인 (B열 4행에 숫자 값)
+- CSV 형식이 올바른지 확인 (RMS Level 섹션의 Ch1 dBFS 값, Noise Level 섹션의 Ch1 FS 값)
 - 파일 확장자가 `.csv`인지 확인
 
 #### 4. WebSocket 연결 실패
@@ -168,7 +174,7 @@ RANC_Auto_Inspector_Dev/
 ### 프로젝트 구조
 ```
 src/
-├── calculator.py        # Vrms 변환 계산
+├── calculator.py        # dBFS/Vrms 변환 계산
 ├── csv_processor.py    # CSV 파일 처리
 ├── file_watcher.py     # 파일 시스템 감시
 ├── integrated_server.py # 통합 서버 (주 진입점)
