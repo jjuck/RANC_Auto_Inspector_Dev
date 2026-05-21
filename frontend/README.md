@@ -1,12 +1,12 @@
 # RANC Auto Inspector - 프론트엔드 대시보드
 
-로컬 데몬(CSV 처리 및 PASS/FAIL 판정)의 결과를 실시간으로 보여주는 대시보드 UI 프로토타입입니다.
+로컬 데몬(CSV 처리 및 PASS/FAIL 판정)의 결과를 실시간으로 보여주는 대시보드 UI입니다.
 
 ## 기능 요약
 
 - **모던 화이트 테마**: 옅은 회색 배경, 순백색 카드 컴포넌트, 연한 테두리와 그림자
 - **메인 판정 영역**: PASS(초록색)/FAIL(빨간색) 상태가 매우 크고 직관적으로 표시
-- **데이터 카드 레이아웃**: Vrms, LSB, SENS, g 값을 개별 카드 형태로 배치
+- **데이터 카드 레이아웃**: dBFS에서 환산된 Vrms, LSB, SENS, g 값을 개별 카드 형태로 배치
 - **숫자 가독성**: Monospace 폰트 적용으로 값 변경 시 레이아웃 유지
 - **헤더 정보**: 최근 검사 파일명과 검사 시간 표시
 - **히스토리 테이블**: 최근 검사 기록 확인 가능
@@ -64,14 +64,16 @@ VSCode에서 "Live Server" 확장을 설치하고 `index.html`을 마우스 우�
 
 2. **메인 판정 영역**
    - PASS/FAIL 상태가 대형 배지로 표시
-   - Vrms 값과 허용 기준 범위 표시
+   - dBFS에서 환산된 Vrms 값과 허용 기준 범위 표시
    - 상태에 따라 초록색(PASS) 또는 빨간색(FAIL) 배경
 
 3. **데이터 카드 그리드 (4개)**
-   - **Vrms**: 전압 RMS 값 (허용 기준: 0.0572 ~ 0.0699)
+   - **Vrms**: RMS Level dBFS에서 환산한 선형 값 (허용 기준: 0.0572 ~ 0.0699)
    - **LSB**: Vrms × 8192 변환값
-   - **SENS**: 20 × log₁₀(Vrms) 변환값
+   - **SENS**: 원본 RMS Level dBFS 값
    - **g**: Vrms × 16 변환값
+
+> 참고: 원본 CSV의 `Noise Level` 섹션에서 추출한 `Ch1` FS 값은 백엔드 출력 로그 CSV의 마지막 열 `Noise_Level`에 저장됩니다. 현재 대시보드 화면에는 별도 카드로 표시하지 않습니다.
 
 4. **히스토리 테이블**
    - 최근 20개 검사 기록 표시
@@ -114,19 +116,56 @@ const sampleData = {
 window.updateDashboard(sampleData);
 ```
 
-이 함수는 WebSocket, REST API, 또는 기타 실시간 통신 방식과 연동할 수 있습니다.
+이 함수는 WebSocket, REST API, 또는 기타 실시간 통신 방식과 연동할 수 있습니다. 백엔드 원본 결과에는 `dbfs`와 `noise_level`도 포함될 수 있지만, `updateDashboard(data)`는 현재 화면 표시용 `values`와 `limits` 구조를 사용합니다.
 
-## 백엔드 연동 준비사항
+## 백엔드 연동
 
-이 프로토타입은 정적 UI이지만, 다음과 같은 방식으로 백엔드와 연동할 수 있습니다:
+대시보드는 `src.integrated_server`의 WebSocket 엔드포인트(`/ws`)와 자동 연동됩니다. 새 CSV가 처리되면 백엔드는 다음 흐름으로 값을 전송합니다:
+
+1. raw CSV의 `RMS Level` 섹션에서 `Ch1` dBFS 값을 추출
+2. `Vrms = 10 ** (dBFS / 20)`로 환산
+3. LSB, SENS, g, PASS/FAIL 판정 계산
+4. raw CSV의 `Noise Level` 섹션에서 `Ch1` FS 값을 추출해 결과 로그의 `Noise_Level` 마지막 열에 저장
+5. WebSocket으로 대시보드 표시용 결과 브로드캐스트
 
 ### 1. WebSocket 연동
 ```javascript
 const ws = new WebSocket('ws://localhost:8000/ws');
 ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    updateDashboard(data);
+    const message = JSON.parse(event.data);
+
+    if (message.type === 'new_result') {
+        updateDashboard({
+            timestamp: message.data.timestamp,
+            filename: message.data.input_file,
+            judgement: message.data.judgement,
+            values: {
+                vrms: message.data.vrms,
+                lsb: message.data.lsb,
+                sens: message.data.sens,
+                g: message.data.g
+            },
+            limits: {
+                vrms_min: message.data.lower_bound,
+                vrms_max: message.data.upper_bound
+            }
+        });
+    }
 };
+```
+
+백엔드의 원본 `new_result` payload에는 화면 표시값 외에도 다음 필드가 포함됩니다:
+
+```javascript
+{
+    dbfs: -24.082399653118497,
+    noise_level: 0.00177202812042252,
+    vrms: 0.0625,
+    lsb: 512.0,
+    sens: -24.08,
+    g: 1.0,
+    judgement: "PASS"
+}
 ```
 
 ### 2. REST API 폴링
@@ -171,7 +210,7 @@ Tailwind CSS의 반응형 클래스를 활용하여 다양한 화면 크기에 �
 
 ## 향후 개선 사항
 
-1. **백엔드 연동**: WebSocket을 통한 실시간 데이터 스트리밍
+1. **Noise Level 시각화**: 출력 로그에 저장되는 Noise Level 값을 대시보드 카드나 히스토리 컬럼으로 표시
 2. **차트 시각화**: Vrms 값의 변화를 라인 차트로 표시
 3. **알림 시스템**: 판정 결과에 따른 사운드/브라우저 알림
 4. **다국어 지원**: 한국어/영어 전환 기능
