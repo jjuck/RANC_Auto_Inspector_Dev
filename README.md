@@ -81,7 +81,7 @@ Ch1,0.00177202812042252,,True,,True
 Ch2,0.0019964198465005,,True,,True
 ```
 
-**중요**: RMS Level 섹션에서 `Ch1` 행의 `RMS Level` 값은 dBFS 단위, Noise Level 섹션에서 `Ch1` 행의 `Noise Level` 값은 FS 단위여야 합니다.
+**중요**: RMS Level 섹션에서 B4(`Ch1`)와 B5(`Ch2`)의 `RMS Level` 값은 dBFS 단위여야 하며, 시스템은 두 값 중 더 높은 값을 사용합니다. Noise Level 섹션에서는 `Ch1` 행의 `Noise Level` 값을 FS 단위로 저장합니다.
 
 ## 대시보드 기능
 
@@ -155,7 +155,7 @@ RANC_Auto_Inspector_Dev/
 
 #### 3. CSV 파일이 처리되지 않음
 - 파일이 `data/input_logs/` 디렉토리에 있는지 확인
-- CSV 형식이 올바른지 확인 (RMS Level 섹션의 Ch1 dBFS 값, Noise Level 섹션의 Ch1 FS 값)
+- CSV 형식이 올바른지 확인 (RMS Level 섹션의 B4/B5 dBFS 값, Noise Level 섹션의 Ch1 FS 값)
 - 파일 확장자가 `.csv`인지 확인
 
 #### 4. WebSocket 연결 실패

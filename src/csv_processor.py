@@ -1,14 +1,24 @@
 """
 CSV 파일 처리 모듈
-RMS Level 섹션에서 Ch1 dBFS 값을 추출
+RMS Level 섹션에서 Ch1/Ch2 dBFS 값 중 더 높은 값을 추출
 """
 
 import pandas as pd
 from pathlib import Path
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_RMS_CHANNELS = ("Ch1", "Ch2")
+NOISE_LEVEL_SCALE = 0.1
+
+
+@dataclass(frozen=True)
+class ChannelMeasurement:
+    channel: str
+    value: float
 
 
 class CSVProcessor:
@@ -23,17 +33,21 @@ class CSVProcessor:
             return ""
         return str(value).strip()
 
-    def extract_dbfs_from_csv(self, file_path: Path, channel: str = "Ch1") -> Optional[float]:
+    def extract_dbfs_from_csv(self, file_path: Path, channel: Optional[str] = None) -> Optional[float]:
         """
-        CSV 파일의 RMS Level 섹션에서 지정 채널의 dBFS 값을 추출
+        CSV 파일의 RMS Level 섹션에서 dBFS 값을 추출
         
         Args:
             file_path: CSV 파일 경로 (Path 객체)
-            channel: 추출할 채널명 (기본값: Ch1)
+            channel: 추출할 채널명. None이면 Ch1/Ch2 중 더 높은 값을 사용
             
         Returns:
             추출된 dBFS 값 (float), 실패 시 None
         """
+        if channel is None:
+            measurement = self.extract_active_dbfs_from_csv(file_path)
+            return None if measurement is None else measurement.value
+
         try:
             df = pd.read_csv(file_path, header=None)
             
@@ -49,6 +63,40 @@ class CSVProcessor:
             logger.debug(f"dBFS 값 추출 성공: {file_path.name} -> {dbfs_value}")
             return dbfs_value
                 
+        except FileNotFoundError:
+            logger.error(f"파일을 찾을 수 없습니다: {file_path}")
+            return None
+        except pd.errors.EmptyDataError:
+            logger.error(f"CSV 파일이 비어 있습니다: {file_path.name}")
+            return None
+        except pd.errors.ParserError:
+            logger.error(f"CSV 파일 파싱 오류: {file_path.name}")
+            return None
+        except Exception as e:
+            logger.error(f"CSV 파일 처리 중 예상치 못한 오류: {file_path.name}, 오류: {e}")
+            return None
+
+    def extract_active_dbfs_from_csv(self, file_path: Path) -> Optional[ChannelMeasurement]:
+        """
+        CSV 파일의 RMS Level 섹션에서 Ch1/Ch2 중 더 높은 dBFS 값과 채널을 추출
+        """
+        try:
+            df = pd.read_csv(file_path, header=None)
+
+            if df.shape[0] < 5 or df.shape[1] < 2:
+                logger.error(f"CSV 파일 크기가 너무 작습니다: {file_path.name}")
+                return None
+
+            measurement = self._find_highest_rms_level_dbfs(df, DEFAULT_RMS_CHANNELS)
+            if measurement is None:
+                logger.error(f"RMS Level 섹션에서 활성 dBFS 값을 찾을 수 없습니다: {file_path.name}")
+                return None
+
+            logger.debug(
+                f"dBFS 값 추출 성공: {file_path.name} -> {measurement.channel}={measurement.value}"
+            )
+            return measurement
+
         except FileNotFoundError:
             logger.error(f"파일을 찾을 수 없습니다: {file_path}")
             return None
@@ -85,8 +133,12 @@ class CSVProcessor:
                 logger.error(f"Noise Level 섹션에서 {channel} FS 값을 찾을 수 없습니다: {file_path.name}")
                 return None
             
-            logger.debug(f"Noise Level 값 추출 성공: {file_path.name} -> {noise_level}")
-            return noise_level
+            scaled_noise_level = noise_level * NOISE_LEVEL_SCALE
+            logger.debug(
+                f"Noise Level 값 추출 성공: {file_path.name} -> "
+                f"{channel}={noise_level}, scaled={scaled_noise_level}"
+            )
+            return scaled_noise_level
                 
         except FileNotFoundError:
             logger.error(f"파일을 찾을 수 없습니다: {file_path}")
@@ -103,6 +155,16 @@ class CSVProcessor:
 
     def _find_rms_level_dbfs(self, df: pd.DataFrame, channel: str) -> Optional[float]:
         return self._find_measurement_value(df, "RMS Level", "dbfs", channel)
+
+    def _find_highest_rms_level_dbfs(self, df: pd.DataFrame, channels: tuple[str, ...]) -> Optional[ChannelMeasurement]:
+        selected: Optional[ChannelMeasurement] = None
+        for channel in channels:
+            value = self._find_rms_level_dbfs(df, channel)
+            if value is None:
+                continue
+            if selected is None or value > selected.value:
+                selected = ChannelMeasurement(channel=channel, value=value)
+        return selected
 
     def _find_measurement_value(
         self,
@@ -154,15 +216,19 @@ class CSVProcessor:
                 return None
             
             # B4 셀 값 추출 (iloc[3, 1])
-            vrms_value = df.iloc[3, 1]
+            if df.shape[0] < 5:
+                logger.error(f"CSV file is too small to read B5: {file_path.name}")
+                return None
+
+            vrms_values = [df.iloc[3, 1], df.iloc[4, 1]]
             
             # 값이 숫자인지 확인
             try:
-                vrms_float = float(vrms_value)
+                vrms_float = max(float(value) for value in vrms_values)
                 logger.debug(f"Vrms 값 추출 성공: {file_path.name} -> {vrms_float}")
                 return vrms_float
             except (ValueError, TypeError):
-                logger.error(f"B4 셀 값이 숫자가 아닙니다: {vrms_value}")
+                logger.error(f"B4/B5 셀 값이 숫자가 아닙니다: {vrms_values}")
                 return None
                 
         except FileNotFoundError:

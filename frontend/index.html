@@ -44,13 +44,13 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .judgement-badge {
-            font-size: 8rem;
+            font-size: 7rem;
             font-weight: 900;
             text-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
         }
         @media (max-width: 768px) {
             .judgement-badge {
-                font-size: 5rem;
+                font-size: 4.5rem;
             }
         }
     </style>
@@ -70,7 +70,7 @@
                     </div>
                 </div>
                 <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 min-w-[300px]">
-                    <div class="flex justify-between items-start">
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                         <div>
                             <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">최근 검사 정보</h2>
                             <div class="mt-2">
@@ -84,7 +84,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button id="simulate-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                        <button id="simulate-btn" class="inline-flex items-center justify-center w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                             <i class="fas fa-bolt mr-2"></i>새 데이터 시뮬레이션
                         </button>
                     </div>
@@ -96,21 +96,21 @@
     <main class="container mx-auto px-6 py-8">
         <!-- Main Judgement Area -->
         <section class="mb-12">
-            <div id="judgement-badge" class="rounded-2xl p-12 text-center text-white pulse-pass fade-in"
+            <div id="judgement-badge" class="rounded-2xl p-10 text-center text-white pulse-pass fade-in"
                  style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
                 <div class="judgement-badge">PASS</div>
-                <div class="mt-8 text-5xl font-extrabold mono">
+                <div class="mt-6 text-4xl font-extrabold mono">
                     LSB = <span id="judgement-lsb" class="text-white">512.0</span>
                 </div>
                 <div class="mt-4 text-lg mono opacity-90">
-                    범위: <span id="judgement-lsb-range" class="font-bold">468.6 ~ 572.7</span>
+                    범위: <span id="judgement-lsb-range" class="font-bold">434.9 ~ 614.3</span>
                 </div>
             </div>
         </section>
 
         <!-- Data Cards Grid -->
         <section class="mb-12">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 <!-- Vrms Card -->
                 <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
                     <div class="flex items-center justify-between mb-4">
@@ -126,7 +126,7 @@
                     <div class="pt-4 border-t border-gray-100">
                         <div class="text-sm text-gray-600">
                             <i class="fas fa-ruler-combined mr-2"></i>
-                            허용 기준: <span id="limit-vrms" class="font-bold mono">0.0572 ~ 0.0699</span>
+                            허용 기준: <span id="limit-vrms" class="font-bold mono">0.0531 ~ 0.0750</span>
                         </div>
                     </div>
                 </div>
@@ -146,7 +146,7 @@
                     <div class="pt-4 border-t border-gray-100">
                         <div class="text-sm text-gray-600">
                             <i class="fas fa-ruler-combined mr-2"></i>
-                            허용 기준: <span id="limit-lsb" class="font-bold mono">468.6 ~ 572.7</span>
+                            허용 기준: <span id="limit-lsb" class="font-bold mono">434.9 ~ 614.3</span>
                         </div>
                     </div>
                 </div>
@@ -166,7 +166,7 @@
                     <div class="pt-4 border-t border-gray-100">
                         <div class="text-sm text-gray-600">
                             <i class="fas fa-ruler-combined mr-2"></i>
-                            허용 기준: <span id="limit-sens" class="font-bold mono">-24.88 ~ -23.11</span>
+                            허용 기준: <span id="limit-sens" class="font-bold mono">-25.50 ~ -22.50</span>
                         </div>
                     </div>
                 </div>
@@ -186,7 +186,27 @@
                     <div class="pt-4 border-t border-gray-100">
                         <div class="text-sm text-gray-600">
                             <i class="fas fa-ruler-combined mr-2"></i>
-                            허용 기준: <span id="limit-g" class="font-bold mono">0.9152 ~ 1.1184</span>
+                            허용 기준: <span id="limit-g" class="font-bold mono">0.8494 ~ 1.1998</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Noise Level Card -->
+                <div class="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 card-hover fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-cyan-100 p-3 rounded-xl">
+                            <i class="fas fa-signal text-cyan-600 text-2xl"></i>
+                        </div>
+                        <span id="card-noise-channel" class="text-sm font-semibold text-cyan-600 bg-cyan-50 px-3 py-1 rounded-full">Ch1</span>
+                    </div>
+                    <h3 class="text-2xl font-extrabold text-gray-900 mb-4">Noise Level</h3>
+                    <div class="mb-4">
+                        <div class="text-3xl font-bold text-gray-900 mono" id="card-noise-level">0.000177203</div>
+                    </div>
+                    <div class="pt-4 border-t border-gray-100">
+                        <div class="text-sm text-gray-600">
+                            <i class="fas fa-ruler-combined mr-2"></i>
+                            FS
                         </div>
                     </div>
                 </div>
@@ -210,6 +230,7 @@
                                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
                                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vrms</th>
                                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LSB</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Noise Level</th>
                                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Judgement</th>
                                 <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -236,7 +257,7 @@
                     <p class="text-gray-700 mt-2">
                         이 대시보드는 로컬 데몬(CSV 처리 및 판정)의 결과를 실시간으로 시각화합니다. 
                         새로운 CSV 파일이 <code class="bg-gray-100 px-2 py-1 rounded">data/input_logs/</code>에 생성되면 자동으로 감지되어 판정 결과가 업데이트됩니다.
-                        현재는 정적 프로토타입으로, "새 데이터 시뮬레이션" 버튼을 클릭하여 다양한 데이터로 테스트할 수 있습니다.
+                        현장 라인에서 처리되는 CSV 결과를 기준으로 현재 검사 상태와 최근 이력을 확인할 수 있습니다.
                     </p>
                 </div>
             </div>
@@ -248,7 +269,6 @@
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="text-gray-500 text-sm">
                     <p>© 2026 RANC Auto Inspector System. All rights reserved.</p>
-                    <p class="mt-1">Phase 1: 로컬 데몬 + 대시보드 프로토타입</p>
                 </div>
                 <div class="flex space-x-4 mt-4 md:mt-0">
                     <a href="#" class="text-gray-400 hover:text-blue-600">

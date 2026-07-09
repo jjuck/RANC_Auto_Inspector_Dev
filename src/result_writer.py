@@ -11,6 +11,9 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+VALID_OUTPUT_GROUPS = ("X", "Y", "Z")
+DEFAULT_OUTPUT_GROUP = "X"
+
 
 class ResultWriter:
     """결과 CSV 파일 작성기"""
@@ -22,10 +25,12 @@ class ResultWriter:
             filename: 결과 CSV 파일명
         """
         self.output_dir = output_dir
-        self.output_file = output_dir / filename
+        self.filename = filename
         
         # 디렉토리 생성
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        for group in VALID_OUTPUT_GROUPS:
+            (self.output_dir / group).mkdir(parents=True, exist_ok=True)
         
         # CSV 컬럼 정의 (사용자 요구사항에 맞춤)
         self.fieldnames = [
@@ -40,19 +45,54 @@ class ResultWriter:
             'Noise_Level'
         ]
         
-        # 파일 존재 여부 확인 (헤더 작성 필요 여부)
-        self.file_exists = self.output_file.exists() and self.output_file.stat().st_size > 0
-        if self.file_exists:
-            self._migrate_header_if_needed()
-        
-        logger.info(f"결과 저장 위치: {self.output_file.absolute()}")
+        logger.info(f"결과 저장 위치: {self.output_dir.absolute()}")
 
-    def _migrate_header_if_needed(self) -> None:
+    @staticmethod
+    def normalize_output_group(group: Optional[str]) -> str:
+        if group is None:
+            return DEFAULT_OUTPUT_GROUP
+
+        normalized = str(group).strip().upper()
+        if normalized not in VALID_OUTPUT_GROUPS:
+            logger.warning(f"지원하지 않는 출력 그룹입니다: {group}. 기본값 {DEFAULT_OUTPUT_GROUP}를 사용합니다.")
+            return DEFAULT_OUTPUT_GROUP
+        return normalized
+
+    def _result_output_file(self, result: Dict[str, any]) -> Path:
+        group = self.normalize_output_group(result.get("output_group"))
+        timestamp = result.get("timestamp")
+
+        try:
+            if timestamp is None:
+                result_datetime = datetime.now()
+            else:
+                result_datetime = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        except ValueError:
+            logger.warning(f"타임스탬프 형식이 올바르지 않아 현재 날짜를 사용합니다: {timestamp}")
+            result_datetime = datetime.now()
+
+        date_folder = f"{result_datetime:%y%m%d}"
+        output_file = self.output_dir / group / date_folder / f"{date_folder}_RANC_{group}.csv"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        return output_file
+
+    def _iter_result_files(self) -> List[Path]:
+        files: List[Path] = []
+        for group in VALID_OUTPUT_GROUPS:
+            group_dir = self.output_dir / group
+            if group_dir.exists():
+                files.extend(sorted(group_dir.rglob("*_RANC_*.csv")))
+        return sorted(files)
+
+    def _migrate_header_if_needed(self, output_file: Path) -> None:
         """
         기존 결과 파일에 새 컬럼이 추가되었을 때 헤더와 기존 행을 보정
         """
         try:
-            with open(self.output_file, 'r', newline='', encoding='utf-8') as f:
+            if not output_file.exists() or output_file.stat().st_size == 0:
+                return
+
+            with open(output_file, 'r', newline='', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 existing_fieldnames = reader.fieldnames or []
                 rows = list(reader)
@@ -64,13 +104,13 @@ class ResultWriter:
                 logger.warning(f"알 수 없는 결과 CSV 컬럼이 있어 헤더 마이그레이션을 건너뜁니다: {existing_fieldnames}")
                 return
             
-            with open(self.output_file, 'w', newline='', encoding='utf-8') as f:
+            with open(output_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
                 for row in rows:
                     writer.writerow({field: row.get(field, "") for field in self.fieldnames})
             
-            logger.info(f"결과 CSV 헤더 마이그레이션 완료: {self.output_file.name}")
+            logger.info(f"결과 CSV 헤더 마이그레이션 완료: {output_file.name}")
         except Exception as e:
             logger.error(f"결과 CSV 헤더 마이그레이션 중 오류: {e}")
     
@@ -87,21 +127,23 @@ class ResultWriter:
         try:
             # 결과 데이터 준비
             csv_row = self._prepare_csv_row(result)
+            output_file = self._result_output_file(result)
+            self._migrate_header_if_needed(output_file)
             
             # 파일 열기 (append 모드, 헤더는 파일이 없을 때만 작성)
-            mode = 'a' if self.file_exists else 'w'
-            with open(self.output_file, mode, newline='', encoding='utf-8') as f:
+            file_exists = output_file.exists() and output_file.stat().st_size > 0
+            mode = 'a' if file_exists else 'w'
+            with open(output_file, mode, newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 
                 # 파일이 새로 생성된 경우 헤더 작성
-                if not self.file_exists:
+                if not file_exists:
                     writer.writeheader()
-                    self.file_exists = True
                 
                 # 데이터 행 작성
                 writer.writerow(csv_row)
             
-            logger.debug(f"결과 저장 완료: {result.get('input_file', 'unknown')}")
+            logger.debug(f"결과 저장 완료: {output_file}")
             return True
             
         except Exception as e:
@@ -180,15 +222,17 @@ class ResultWriter:
         Returns:
             최근 결과 리스트
         """
-        if not self.output_file.exists():
+        result_files = self._iter_result_files()
+        if not result_files:
             return []
         
         try:
             results = []
-            with open(self.output_file, 'r', newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    results.append(row)
+            for output_file in result_files:
+                with open(output_file, 'r', newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        results.append(row)
             
             # 최근 결과부터 반환 (마지막 행이 최신)
             return list(reversed(results))[:limit]
@@ -204,7 +248,8 @@ class ResultWriter:
         Returns:
             통계 정보 딕셔너리
         """
-        if not self.output_file.exists():
+        result_files = self._iter_result_files()
+        if not result_files:
             return {
                 'total': 0,
                 'pass': 0,
@@ -216,12 +261,13 @@ class ResultWriter:
             total = 0
             pass_count = 0
             
-            with open(self.output_file, 'r', newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    total += 1
-                    if row.get('Judgement', '').upper() == 'PASS':
-                        pass_count += 1
+            for output_file in result_files:
+                with open(output_file, 'r', newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        total += 1
+                        if row.get('Judgement', '').upper() == 'PASS':
+                            pass_count += 1
             
             fail_count = total - pass_count
             pass_rate = (pass_count / total * 100) if total > 0 else 0.0
@@ -250,10 +296,9 @@ class ResultWriter:
             성공 시 True, 실패 시 False
         """
         try:
-            if self.output_file.exists():
-                self.output_file.unlink()
-                self.file_exists = False
-                logger.info("결과 파일 초기화 완료")
+            for output_file in self._iter_result_files():
+                output_file.unlink()
+            logger.info("결과 파일 초기화 완료")
             return True
         except Exception as e:
             logger.error(f"결과 파일 초기화 중 오류: {e}")
@@ -317,4 +362,4 @@ if __name__ == "__main__":
     for i, row in enumerate(recent):
         print(f"  {i+1}. {row['Input_Filename']}: {row['Judgement']} (Vrms={row['Vrms']})")
     
-    print(f"\n테스트 완료. 결과 파일: {writer.output_file}")
+    print(f"\n테스트 완료. 결과 디렉토리: {writer.output_dir}")

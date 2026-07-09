@@ -3,9 +3,11 @@
 
 // ==================== 전역 상태 ====================
 let history = [];
+const NOMINAL_DBFS = -24;
+const DBFS_TOLERANCE = 1.5;
 const LIMITS = {
-    vrms_min: 468.6 / 8192,  // 약 0.0572
-    vrms_max: 572.7 / 8192   // 약 0.0699
+    vrms_min: Math.pow(10, (NOMINAL_DBFS - DBFS_TOLERANCE) / 20),
+    vrms_max: Math.pow(10, (NOMINAL_DBFS + DBFS_TOLERANCE) / 20)
 };
 
 // 파생된 Limit 계산
@@ -45,6 +47,8 @@ const elements = {
     cardLsb: document.getElementById('card-lsb'),
     cardSens: document.getElementById('card-sens'),
     cardG: document.getElementById('card-g'),
+    cardNoiseLevel: document.getElementById('card-noise-level'),
+    cardNoiseChannel: document.getElementById('card-noise-channel'),
     
     // Limit 표시 요소
     limitVrms: document.getElementById('limit-vrms'),
@@ -114,6 +118,20 @@ function formatNumber(num, decimals = 4) {
     return num.toFixed(decimals);
 }
 
+function optionalNumber(value) {
+    if (value === null || value === undefined || value === '') return NaN;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : NaN;
+}
+
+function getNoiseLevel(values) {
+    return optionalNumber(values?.noise_level ?? values?.noiseLevel);
+}
+
+function getActiveChannel(values) {
+    return values?.active_channel || values?.activeChannel || 'N/A';
+}
+
 // ==================== 핵심 함수: updateDashboard ====================
 
 /**
@@ -123,8 +141,8 @@ function formatNumber(num, decimals = 4) {
  *     timestamp: "2026-03-05 14:30:25",
  *     filename: "96398XGR500X251215X052.csv",
  *     judgement: "PASS",
- *     values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
- *     limits: { vrms_min: 0.0572, vrms_max: 0.0699 }
+ *     values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0, noise_level: 0.000177203, active_channel: "Ch1" },
+ *     limits: { vrms_min: 0.0531, vrms_max: 0.0750 }
  *   }
  */
 function updateDashboard(data) {
@@ -186,6 +204,8 @@ function updateValueCards(values) {
     elements.cardLsb.textContent = formatNumber(values.lsb, 2);
     elements.cardSens.textContent = formatNumber(values.sens, 2);
     elements.cardG.textContent = formatNumber(values.g, 3);
+    elements.cardNoiseLevel.textContent = formatNumber(getNoiseLevel(values), 9);
+    elements.cardNoiseChannel.textContent = getActiveChannel(values);
 }
 
 /**
@@ -214,6 +234,7 @@ function addToHistoryTable(data) {
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">${data.filename}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.vrms, 6)}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.lsb, 2)}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(getNoiseLevel(data.values), 9)}</td>
         <td class="px-6 py-4 whitespace-nowrap">
             <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
                 ${data.judgement === 'PASS' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
@@ -274,12 +295,14 @@ function generateRandomData() {
     const vrms = Math.random() * 0.1; // 0 ~ 0.1 사이 랜덤
     const { lsb, sens, g } = calculateValues(vrms);
     const judgement = judgeVrms(vrms);
+    const active_channel = Math.random() > 0.5 ? 'Ch1' : 'Ch2';
+    const noise_level = (0.001 + Math.random() * 0.002) * 0.1;
     
     return {
         timestamp: getCurrentTimestamp(),
         filename: generateFilename(),
         judgement: judgement,
-        values: { vrms, lsb, sens, g },
+        values: { vrms, lsb, sens, g, noise_level, active_channel },
         limits: LIMITS
     };
 }
@@ -372,7 +395,7 @@ function initializeDashboard() {
         timestamp: getCurrentTimestamp(),
         filename: "96398XGR500X251215X052.csv",
         judgement: "PASS",
-        values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
+        values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0, noise_level: 0.000177202812042, active_channel: "Ch1" },
         limits: LIMITS
     };
     
@@ -471,7 +494,9 @@ function connectWebSocket() {
                             vrms: message.data.vrms,
                             lsb: message.data.lsb,
                             sens: message.data.sens,
-                            g: message.data.g
+                            g: message.data.g,
+                            noise_level: message.data.noise_level,
+                            active_channel: message.data.active_channel
                         },
                         limits: {
                             vrms_min: message.data.lower_bound,

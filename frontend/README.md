@@ -68,7 +68,7 @@ VSCode에서 "Live Server" 확장을 설치하고 `index.html`을 마우스 우�
    - 상태에 따라 초록색(PASS) 또는 빨간색(FAIL) 배경
 
 3. **데이터 카드 그리드 (4개)**
-   - **Vrms**: RMS Level dBFS에서 환산한 선형 값 (허용 기준: 0.0572 ~ 0.0699)
+   - **Vrms**: RMS Level dBFS에서 환산한 선형 값 (허용 기준: 0.0531 ~ 0.0750)
    - **LSB**: Vrms × 8192 변환값
    - **SENS**: 원본 RMS Level dBFS 값
    - **g**: Vrms × 16 변환값
@@ -107,8 +107,8 @@ const sampleData = {
         g: 1.0
     },
     limits: {
-        vrms_min: 0.0572,
-        vrms_max: 0.0699
+        vrms_min: 0.0531,
+        vrms_max: 0.0750
     }
 };
 
@@ -122,7 +122,7 @@ window.updateDashboard(sampleData);
 
 대시보드는 `src.integrated_server`의 WebSocket 엔드포인트(`/ws`)와 자동 연동됩니다. 새 CSV가 처리되면 백엔드는 다음 흐름으로 값을 전송합니다:
 
-1. raw CSV의 `RMS Level` 섹션에서 `Ch1` dBFS 값을 추출
+1. raw CSV의 `RMS Level` 섹션에서 B4(`Ch1`)와 B5(`Ch2`) dBFS 중 더 높은 값을 추출
 2. `Vrms = 10 ** (dBFS / 20)`로 환산
 3. LSB, SENS, g, PASS/FAIL 판정 계산
 4. raw CSV의 `Noise Level` 섹션에서 `Ch1` FS 값을 추출해 결과 로그의 `Noise_Level` 마지막 열에 저장

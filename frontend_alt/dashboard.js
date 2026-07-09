@@ -3,9 +3,12 @@
 
 // ==================== 전역 상태 ====================
 let history = [];
+let selectedOutputGroup = 'X';
+const NOMINAL_DBFS = -24;
+const DBFS_TOLERANCE = 1.5;
 const LIMITS = {
-    vrms_min: 468.6 / 8192,  // 약 0.0572
-    vrms_max: 572.7 / 8192   // 약 0.0699
+    vrms_min: Math.pow(10, (NOMINAL_DBFS - DBFS_TOLERANCE) / 20),
+    vrms_max: Math.pow(10, (NOMINAL_DBFS + DBFS_TOLERANCE) / 20)
 };
 
 // 파생된 Limit 계산
@@ -32,6 +35,7 @@ const elements = {
     // 헤더 정보
     currentFilename: document.getElementById('current-filename'),
     currentTimestamp: document.getElementById('current-timestamp'),
+    outputGroupSelect: document.getElementById('output-group-select'),
     
     // 판정 영역
     judgementBadge: document.getElementById('judgement-badge'),
@@ -45,6 +49,8 @@ const elements = {
     cardLsb: document.getElementById('card-lsb'),
     cardSens: document.getElementById('card-sens'),
     cardG: document.getElementById('card-g'),
+    cardNoiseLevel: document.getElementById('card-noise-level'),
+    cardNoiseChannel: document.getElementById('card-noise-channel'),
     
     // Limit 표시 요소
     limitVrms: document.getElementById('limit-vrms'),
@@ -57,7 +63,6 @@ const elements = {
     historyEmpty: document.getElementById('history-empty'),
     
     // 버튼
-    simulateBtn: document.getElementById('simulate-btn'),
     clearHistoryBtn: document.getElementById('clear-history')
 };
 
@@ -114,6 +119,20 @@ function formatNumber(num, decimals = 4) {
     return num.toFixed(decimals);
 }
 
+function optionalNumber(value) {
+    if (value === null || value === undefined || value === '') return NaN;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : NaN;
+}
+
+function getNoiseLevel(values) {
+    return optionalNumber(values?.noise_level ?? values?.noiseLevel);
+}
+
+function getActiveChannel(values) {
+    return values?.active_channel || values?.activeChannel || 'N/A';
+}
+
 // ==================== 핵심 함수: updateDashboard ====================
 
 /**
@@ -123,16 +142,20 @@ function formatNumber(num, decimals = 4) {
  *     timestamp: "2026-03-05 14:30:25",
  *     filename: "96398XGR500X251215X052.csv",
  *     judgement: "PASS",
- *     values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
- *     limits: { vrms_min: 0.0572, vrms_max: 0.0699 }
+ *     values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0, noise_level: 0.000177203, active_channel: "Ch1" },
+ *     limits: { vrms_min: 0.0531, vrms_max: 0.0750 }
  *   }
  */
 function updateDashboard(data) {
     console.log('대시보드 업데이트:', data);
     
     // 1. 헤더 정보 업데이트
-    elements.currentFilename.textContent = data.filename;
-    elements.currentTimestamp.textContent = data.timestamp;
+    if (elements.currentFilename) {
+        elements.currentFilename.textContent = data.filename;
+    }
+    if (elements.currentTimestamp) {
+        elements.currentTimestamp.textContent = data.timestamp;
+    }
     
     // 2. 판정 영역 업데이트
     updateJudgementBadge(data.judgement, data.values.vrms);
@@ -186,6 +209,8 @@ function updateValueCards(values) {
     elements.cardLsb.textContent = formatNumber(values.lsb, 2);
     elements.cardSens.textContent = formatNumber(values.sens, 2);
     elements.cardG.textContent = formatNumber(values.g, 3);
+    elements.cardNoiseLevel.textContent = formatNumber(getNoiseLevel(values), 9);
+    elements.cardNoiseChannel.textContent = getActiveChannel(values);
 }
 
 /**
@@ -214,6 +239,7 @@ function addToHistoryTable(data) {
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">${data.filename}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.vrms, 6)}</td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(data.values.lsb, 2)}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 mono">${formatNumber(getNoiseLevel(data.values), 9)}</td>
         <td class="px-6 py-4 whitespace-nowrap">
             <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
                 ${data.judgement === 'PASS' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
@@ -274,34 +300,16 @@ function generateRandomData() {
     const vrms = Math.random() * 0.1; // 0 ~ 0.1 사이 랜덤
     const { lsb, sens, g } = calculateValues(vrms);
     const judgement = judgeVrms(vrms);
+    const active_channel = Math.random() > 0.5 ? 'Ch1' : 'Ch2';
+    const noise_level = (0.001 + Math.random() * 0.002) * 0.1;
     
     return {
         timestamp: getCurrentTimestamp(),
         filename: generateFilename(),
         judgement: judgement,
-        values: { vrms, lsb, sens, g },
+        values: { vrms, lsb, sens, g, noise_level, active_channel },
         limits: LIMITS
     };
-}
-
-/**
- * 시뮬레이션 버튼 클릭 핸들러
- */
-function simulateNewData() {
-    const data = generateRandomData();
-    updateDashboard(data);
-    
-    // 버튼에 피드백
-    const btn = elements.simulateBtn;
-    btn.innerHTML = '<i class="fas fa-check mr-2"></i>데이터 생성됨!';
-    btn.classList.remove('bg-blue-600');
-    btn.classList.add('bg-green-600');
-    
-    setTimeout(() => {
-        btn.innerHTML = '<i class="fas fa-bolt mr-2"></i>새 데이터 시뮬레이션';
-        btn.classList.remove('bg-green-600');
-        btn.classList.add('bg-blue-600');
-    }, 1500);
 }
 
 /**
@@ -372,7 +380,7 @@ function initializeDashboard() {
         timestamp: getCurrentTimestamp(),
         filename: "96398XGR500X251215X052.csv",
         judgement: "PASS",
-        values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0 },
+        values: { vrms: 0.0625, lsb: 512.0, sens: -24.08, g: 1.0, noise_level: 0.000177202812042, active_channel: "Ch1" },
         limits: LIMITS
     };
     
@@ -393,17 +401,19 @@ function initializeDashboard() {
  * 이벤트 리스너 등록
  */
 function setupEventListeners() {
-    // 시뮬레이션 버튼
-    elements.simulateBtn.addEventListener('click', simulateNewData);
+    if (elements.outputGroupSelect) {
+        selectedOutputGroup = elements.outputGroupSelect.value;
+        elements.outputGroupSelect.addEventListener('change', () => {
+            selectedOutputGroup = elements.outputGroupSelect.value;
+            sendOutputGroupSelection();
+        });
+    }
     
     // 히스토리 지우기 버튼
     elements.clearHistoryBtn.addEventListener('click', clearHistory);
     
     // 키보드 단축키
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'r' || e.key === 'R') {
-            simulateNewData();
-        }
         if (e.key === 'Escape') {
             clearHistory();
         }
@@ -429,7 +439,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('WebSocket 연결 시도 중...');
     connectWebSocket();
     
-    console.log('대시보드 준비 완료! 시뮬레이션 버튼을 클릭하거나 R 키를 눌러 테스트하세요.');
+    console.log('대시보드 준비 완료');
 });
 
 // ==================== WebSocket 클라이언트 ====================
@@ -438,6 +448,17 @@ let websocket = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 2000; // 2초
+
+function sendOutputGroupSelection() {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    websocket.send(JSON.stringify({
+        type: 'set_output_group',
+        value: selectedOutputGroup
+    }));
+}
 
 /**
  * WebSocket 연결 설정
@@ -454,6 +475,7 @@ function connectWebSocket() {
             console.log('WebSocket 연결 성공:', wsUrl);
             reconnectAttempts = 0;
             updateConnectionStatus(true);
+            sendOutputGroupSelection();
         };
         
         websocket.onmessage = function(event) {
@@ -471,7 +493,10 @@ function connectWebSocket() {
                             vrms: message.data.vrms,
                             lsb: message.data.lsb,
                             sens: message.data.sens,
-                            g: message.data.g
+                            g: message.data.g,
+                            noise_level: message.data.noise_level,
+                            active_channel: message.data.active_channel,
+                            output_group: message.data.output_group
                         },
                         limits: {
                             vrms_min: message.data.lower_bound,
@@ -481,9 +506,11 @@ function connectWebSocket() {
                     
                     // 대시보드 업데이트
                     updateDashboard(dashboardData);
-                    
-                    // 히스토리에도 추가
-                    addToHistoryTable(dashboardData);
+                } else if (message.type === 'output_group_status') {
+                    selectedOutputGroup = message.data?.output_group || selectedOutputGroup;
+                    if (elements.outputGroupSelect) {
+                        elements.outputGroupSelect.value = selectedOutputGroup;
+                    }
                 } else if (message.type === 'system_status') {
                     console.log('시스템 상태 업데이트:', message.data);
                     // 필요 시 시스템 상태 UI 업데이트 구현
@@ -532,11 +559,11 @@ function updateConnectionStatus(connected) {
     const statusIndicator = document.getElementById('connection-status');
     if (!statusIndicator) {
         // 상태 표시기가 없으면 생성
-        const header = document.querySelector('header .container');
+        const header = document.querySelector('header .container > div');
         if (header) {
             const statusDiv = document.createElement('div');
             statusDiv.id = 'connection-status';
-            statusDiv.className = 'ml-4 px-3 py-1 rounded-full text-sm font-medium';
+            statusDiv.className = 'px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap';
             statusDiv.textContent = connected ? '실시간 연결됨' : '연결 끊김';
             statusDiv.style.backgroundColor = connected ? '#10b981' : '#ef4444';
             statusDiv.style.color = 'white';
@@ -580,5 +607,6 @@ window.getDashboardState = () => ({
     historyCount: history.length,
     currentJudgement: elements.judgementText?.textContent || 'UNKNOWN',
     lastUpdate: elements.currentTimestamp?.textContent || '',
+    selectedOutputGroup,
     websocketConnected: websocket ? websocket.readyState === WebSocket.OPEN : false
 });

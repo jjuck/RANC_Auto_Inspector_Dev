@@ -1,13 +1,17 @@
 """
 판정 로직 모듈
 Vrms 값이 허용 범위 내에 있는지 판정
-허용 범위: (468.6 / 8192) ≤ Vrms ≤ (572.7 / 8192)
+허용 범위: -24 ± 1.5 dBFS를 Vrms로 환산한 범위
 """
 
 import logging
+import math
 from typing import Dict, Literal
 
 logger = logging.getLogger(__name__)
+
+NOMINAL_DBFS = -24.0
+DBFS_TOLERANCE = 1.5
 
 
 def calculate_bounds() -> tuple:
@@ -17,8 +21,8 @@ def calculate_bounds() -> tuple:
     Returns:
         (lower_bound, upper_bound) 튜플
     """
-    lower_bound = 468.6 / 8192
-    upper_bound = 572.7 / 8192
+    lower_bound = math.pow(10, (NOMINAL_DBFS - DBFS_TOLERANCE) / 20)
+    upper_bound = math.pow(10, (NOMINAL_DBFS + DBFS_TOLERANCE) / 20)
     return lower_bound, upper_bound
 
 

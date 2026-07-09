@@ -40,6 +40,7 @@ logs/
 # Data directories (입력/출력 데이터)
 data/input_logs/*.csv
 data/output_results/*.csv
+data/output_results/**/*.csv
 !data/input_logs/.gitkeep
 !data/output_results/.gitkeep
 

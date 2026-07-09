@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from src.csv_processor import CSVProcessor
 from src.calculator import convert_dbfs
 from src.judge import judge_vrms
-from src.result_writer import ResultWriter
+from src.result_writer import DEFAULT_OUTPUT_GROUP, ResultWriter
 from src.file_watcher import FileWatcher
 
 # 프로젝트 루트 디렉토리 계산
@@ -117,12 +117,19 @@ class AutoInspectorDaemon:
         self.websocket_manager = websocket_manager or WebSocketManager()
         self.processor = CSVProcessor()
         self.writer = ResultWriter(self.output_dir)
+        self.current_output_group = DEFAULT_OUTPUT_GROUP
         self.watcher: Optional[FileWatcher] = None
         self.is_running = False
         self.processed_files: Dict[str, float] = {}  # 파일명: 처리 시간 (debounce용)
         self.debounce_seconds = 2.0  # 2초 내 중복 처리 방지
         
         logger.info(f"데몬 초기화: 입력 디렉토리={self.input_dir}, 출력 디렉토리={self.output_dir}")
+
+    def set_output_group(self, group: str) -> str:
+        """결과 저장 라인 그룹을 X/Y/Z 중 하나로 설정"""
+        self.current_output_group = self.writer.normalize_output_group(group)
+        logger.info(f"결과 저장 그룹 변경: {self.current_output_group}")
+        return self.current_output_group
         
     def _should_process_file(self, file_path: Path) -> bool:
         """파일 중복 처리 방지 (debounce)"""
@@ -147,17 +154,19 @@ class AutoInspectorDaemon:
         try:
             logger.info(f"새 파일 감지: {file_path.name}")
             
-            # 1. CSV 파일에서 RMS Level dBFS 값 추출
-            dbfs_value = self.processor.extract_dbfs_from_csv(file_path)
+            # 1. CSV 파일에서 RMS Level dBFS 값과 활성 채널 추출
+            active_dbfs = self.processor.extract_active_dbfs_from_csv(file_path)
             
-            if dbfs_value is None:
+            if active_dbfs is None:
                 logger.error(f"dBFS 값 추출 실패: {file_path.name}")
                 return
-                
-            logger.info(f"dBFS 값 추출 성공: {dbfs_value:.6f}")
 
-            # Noise Level은 결과 로그용 부가 측정값입니다.
-            noise_level = self.processor.extract_noise_level_from_csv(file_path)
+            dbfs_value = active_dbfs.value
+                
+            logger.info(f"dBFS 값 추출 성공: {active_dbfs.channel}={dbfs_value:.6f}")
+
+            # Noise Level은 RMS Level에서 선택된 활성 채널과 같은 채널 값을 사용합니다.
+            noise_level = self.processor.extract_noise_level_from_csv(file_path, active_dbfs.channel)
             
             # 2. dBFS를 기존 Vrms 기반 계산 값으로 변환
             converted = convert_dbfs(dbfs_value)
@@ -170,7 +179,9 @@ class AutoInspectorDaemon:
             result = {
                 'timestamp': datetime.now().isoformat(),
                 'input_file': file_path.name,
+                'output_group': self.current_output_group,
                 'dbfs': dbfs_value,
+                'active_channel': active_dbfs.channel,
                 'noise_level': noise_level,
                 'vrms': vrms_value,
                 'lsb': converted['lsb'],
@@ -213,6 +224,7 @@ class AutoInspectorDaemon:
         print(f"[RANC Auto Inspector] 처리 완료")
         print("="*60)
         print(f"  입력 파일: {result['input_file']}")
+        print(f"  저장 그룹: {result.get('output_group', DEFAULT_OUTPUT_GROUP)}")
         print(f"  처리 시간: {result['timestamp']}")
         if 'dbfs' in result:
             print(f"  dBFS 값: {result['dbfs']:.6f}")
@@ -397,7 +409,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.debug(f"클라이언트 메시지 수신: {message}")
                 
                 # 클라이언트 요청 처리 (예: 히스토리 요청)
-                if message.get("type") == "request_history":
+                if message.get("type") == "set_output_group":
+                    if not app_state.daemon:
+                        await websocket.send_text(json.dumps({
+                            "type": "output_group_status",
+                            "data": {"ok": False, "output_group": DEFAULT_OUTPUT_GROUP}
+                        }))
+                        continue
+
+                    output_group = app_state.daemon.set_output_group(message.get("value", DEFAULT_OUTPUT_GROUP))
+                    await websocket.send_text(json.dumps({
+                        "type": "output_group_status",
+                        "data": {"ok": True, "output_group": output_group}
+                    }))
+                elif message.get("type") == "request_history":
                     # 히스토리 데이터 전송 로직은 향후 구현
                     pass
                     
