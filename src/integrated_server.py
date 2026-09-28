@@ -122,6 +122,8 @@ class AutoInspectorDaemon:
         self.is_running = False
         self.processed_files: Dict[str, float] = {}  # 파일명: 처리 시간 (debounce용)
         self.debounce_seconds = 2.0  # 2초 내 중복 처리 방지
+        self._consolidation_stop = threading.Event()
+        self._consolidation_thread = None
         
         logger.info(f"데몬 초기화: 입력 디렉토리={self.input_dir}, 출력 디렉토리={self.output_dir}")
 
@@ -239,6 +241,12 @@ class AutoInspectorDaemon:
         print(f"  범위 내 여부: {'예' if result['is_within_range'] else '아니오'}")
         print("="*60)
         
+    def _consolidation_loop(self):
+        """변경된 로그를 확인하고, 저장 직후 실패한 통합을 재시도한다."""
+        while not self._consolidation_stop.is_set():
+            self.writer.consolidate_previous_days()
+            self._consolidation_stop.wait(30)
+
     def start(self, main_event_loop: Optional[asyncio.AbstractEventLoop] = None):
         """데몬 시작 (메인 이벤트 루프 전달)"""
         if self.is_running:
@@ -246,6 +254,9 @@ class AutoInspectorDaemon:
             return
             
         self._main_event_loop = main_event_loop
+        self._consolidation_stop.clear()
+        self._consolidation_thread = threading.Thread(target=self._consolidation_loop, daemon=True)
+        self._consolidation_thread.start()
         
         self.watcher = FileWatcher(
             watch_dir=self.input_dir,
@@ -263,6 +274,9 @@ class AutoInspectorDaemon:
         """데몬 중지"""
         if self.watcher:
             self.watcher.stop()
+        self._consolidation_stop.set()
+        if self._consolidation_thread:
+            self._consolidation_thread.join()
         self.is_running = False
         logger.info("데몬 중지됨")
 

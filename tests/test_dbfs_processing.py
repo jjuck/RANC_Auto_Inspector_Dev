@@ -179,7 +179,7 @@ class DbfsProcessingTest(unittest.TestCase):
                 rows = list(csv.DictReader(f))
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["Input_Filename"], "sample.csv")
+        self.assertEqual(rows[0]["SN"], "sample")
 
     def test_result_writer_splits_results_by_group_and_date(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -222,8 +222,8 @@ class DbfsProcessingTest(unittest.TestCase):
         self.assertTrue(z_dir_exists)
         self.assertEqual(len(x_rows), 1)
         self.assertEqual(len(y_rows), 1)
-        self.assertEqual(x_rows[0]["Input_Filename"], "x.csv")
-        self.assertEqual(y_rows[0]["Input_Filename"], "y.csv")
+        self.assertEqual(x_rows[0]["SN"], "x")
+        self.assertEqual(y_rows[0]["SN"], "y")
 
     def test_result_writer_migrates_existing_output_header_to_include_dbfs_and_noise_level(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -254,8 +254,10 @@ class DbfsProcessingTest(unittest.TestCase):
                 reader = csv.DictReader(f)
                 rows = list(reader)
 
-        self.assertEqual(reader.fieldnames, ["Timestamp", "Input_Filename", "dBFS", "Vrms", "LSB", "SENS", "g", "Judgement", "Noise_Level"])
+        self.assertEqual(reader.fieldnames, ["Timestamp", "SN", "dBFS", "Vrms", "LSB", "SENS", "g", "Judgement", "Noise_Level"])
         self.assertEqual(rows[0]["dBFS"], "")
+        self.assertEqual(rows[0]["SN"], "old")
+        self.assertEqual(rows[1]["SN"], "new")
         self.assertEqual(rows[0]["Noise_Level"], "")
         self.assertEqual(rows[1]["dBFS"], "-24.08")
         self.assertEqual(rows[1]["Noise_Level"], "0.001772028120423")

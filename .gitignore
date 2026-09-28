@@ -41,6 +41,8 @@ logs/
 data/input_logs/*.csv
 data/output_results/*.csv
 data/output_results/**/*.csv
+data/output_results/**/*.state.json
+update_backups/
 !data/input_logs/.gitkeep
 !data/output_results/.gitkeep
 

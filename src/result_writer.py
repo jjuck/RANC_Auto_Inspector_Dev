@@ -4,9 +4,14 @@
 """
 
 import csv
+import json
 import logging
+import os
+import re
+import tempfile
+import threading
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -26,6 +31,8 @@ class ResultWriter:
         """
         self.output_dir = output_dir
         self.filename = filename
+        self._lock = threading.RLock()
+        self.merged_file = self._merged_output_file(datetime.now().date())
         
         # 디렉토리 생성
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -35,7 +42,7 @@ class ResultWriter:
         # CSV 컬럼 정의 (사용자 요구사항에 맞춤)
         self.fieldnames = [
             'Timestamp',
-            'Input_Filename',
+            'SN',
             'dBFS',
             'Vrms',
             'LSB',
@@ -84,15 +91,24 @@ class ResultWriter:
                 files.extend(sorted(group_dir.rglob("*_RANC_*.csv")))
         return sorted(files)
 
+    @staticmethod
+    def _normalize_csv_row(row: Dict) -> Dict:
+        normalized = dict(row)
+        if "SN" not in normalized:
+            normalized["SN"] = Path(normalized.get("Input_Filename", "")).stem
+        normalized.pop("Input_Filename", None)
+        return normalized
+
     def _migrate_header_if_needed(self, output_file: Path) -> None:
         """
         기존 결과 파일에 새 컬럼이 추가되었을 때 헤더와 기존 행을 보정
         """
+        temporary_path = None
         try:
             if not output_file.exists() or output_file.stat().st_size == 0:
                 return
 
-            with open(output_file, 'r', newline='', encoding='utf-8') as f:
+            with open(output_file, 'r', newline='', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 existing_fieldnames = reader.fieldnames or []
                 rows = list(reader)
@@ -100,21 +116,158 @@ class ResultWriter:
             if existing_fieldnames == self.fieldnames:
                 return
             
-            if not set(existing_fieldnames).issubset(set(self.fieldnames)):
-                logger.warning(f"알 수 없는 결과 CSV 컬럼이 있어 헤더 마이그레이션을 건너뜁니다: {existing_fieldnames}")
-                return
+            if not set(existing_fieldnames).issubset(set(self.fieldnames) | {"Input_Filename"}):
+                raise ValueError(f"알 수 없는 결과 CSV 컬럼: {existing_fieldnames}")
             
-            with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            with tempfile.NamedTemporaryFile(mode='w', newline='', encoding='utf-8',
+                                             dir=output_file.parent, suffix='.tmp', delete=False) as f:
+                temporary_path = Path(f.name)
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
                 for row in rows:
+                    if None in row or any(value is None for value in row.values()):
+                        raise ValueError(f"손상된 CSV 행: {output_file}")
+                    row = self._normalize_csv_row(row)
                     writer.writerow({field: row.get(field, "") for field in self.fieldnames})
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_path, output_file)
             
             logger.info(f"결과 CSV 헤더 마이그레이션 완료: {output_file.name}")
         except Exception as e:
             logger.error(f"결과 CSV 헤더 마이그레이션 중 오류: {e}")
+            raise
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
     
+    def _merged_output_file(self, day: date) -> Path:
+        date_folder = f"{day:%y%m%d}"
+        return self.output_dir / "merged" / date_folder / f"{date_folder}_RANC_XYZ.csv"
+
+    def consolidate_previous_days(self, today: Optional[date] = None, only_date: Optional[date] = None) -> bool:
+        """오늘까지의 로그 중 변경된 날짜만 통합한다. only_date는 저장 직후 갱신용이다."""
+        today = today or datetime.now().date()
+        with self._lock:
+            temporary_path = None
+            try:
+                by_day = {}
+                sources_by_day = {}
+                signatures = {}
+                for source in self._iter_result_files():
+                    group = source.relative_to(self.output_dir).parts[0]
+                    try:
+                        source_date = datetime.strptime(source.name, f"%y%m%d_RANC_{group}.csv").date()
+                    except ValueError:
+                        raise ValueError(f"결과 파일 날짜를 확인할 수 없습니다: {source}")
+                    if source_date > today or (only_date is not None and source_date != only_date):
+                        continue
+                    sources_by_day.setdefault(source_date, []).append((source, group))
+                for source_date, sources in sorted(sources_by_day.items()):
+                    output_file = self._merged_output_file(source_date)
+                    state_file = output_file.with_suffix(".state.json")
+                    signature = [
+                        [str(source.relative_to(self.output_dir)), source.stat().st_size, source.stat().st_mtime_ns]
+                        for source, _ in sources
+                    ]
+                    signatures[source_date] = signature
+                    try:
+                        state = json.loads(state_file.read_text(encoding="utf-8"))
+                        output_stat = output_file.stat()
+                        if (state.get("version") == 1 and state.get("sources") == signature
+                                and state.get("output") == [output_stat.st_size, output_stat.st_mtime_ns]):
+                            self.merged_file = output_file
+                            continue
+                    except (OSError, ValueError, TypeError, AttributeError):
+                        pass
+                    latest = by_day.setdefault(source_date, {})
+                    for source, group in sources:
+                        with source.open(newline="", encoding="utf-8-sig") as stream:
+                            reader = csv.DictReader(stream)
+                            fields = set(reader.fieldnames or [])
+                            if "Timestamp" not in fields or not fields.intersection({"SN", "Input_Filename"}):
+                                raise ValueError(f"통합에 필요한 컬럼이 없습니다: {source}")
+                            for row in reader:
+                                if None in row or any(value is None for value in row.values()):
+                                    raise ValueError(f"손상된 CSV 행: {source}:{reader.line_num}")
+                                row = self._normalize_csv_row(row)
+                                sn = re.sub(r"_\d+$", "", row["SN"])
+                                if not sn:
+                                    raise ValueError(f"SN을 확인할 수 없습니다: {source}:{reader.line_num}")
+                                timestamp = datetime.fromisoformat(row["Timestamp"].replace("Z", "+00:00"))
+                                if timestamp.tzinfo is not None:
+                                    timestamp = timestamp.astimezone().replace(tzinfo=None)
+                                if timestamp.date() > today:
+                                    continue
+                                key = (sn, group)
+                                # 파일 경로순으로 읽으며, 시각이 같으면 나중에 읽은 행을 선택한다.
+                                if key not in latest or timestamp >= latest[key][0]:
+                                    latest[key] = (timestamp, row)
+
+                for source_date, latest in sorted(by_day.items()):
+                    output_file = self._merged_output_file(source_date)
+                    columns = ["SN"] + [
+                        f"{group}_{field}" for group in VALID_OUTPUT_GROUPS for field in self.fieldnames if field != "SN"
+                    ]
+                    output_file.parent.mkdir(parents=True, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", newline="", encoding="utf-8-sig", delete=False,
+                        dir=output_file.parent, suffix=".tmp",
+                    ) as stream:
+                        temporary_path = Path(stream.name)
+                        writer = csv.DictWriter(stream, fieldnames=columns)
+                        writer.writeheader()
+                        for sn in sorted({key[0] for key in latest}):
+                            merged = {"SN": sn}
+                            for group in VALID_OUTPUT_GROUPS:
+                                selected = latest.get((sn, group))
+                                if selected:
+                                    merged.update({
+                                        f"{group}_{field}": selected[1].get(field, "")
+                                        for field in self.fieldnames if field != "SN"
+                                    })
+                            writer.writerow(merged)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary_path, output_file)
+                    self.merged_file = output_file
+                    output_stat = output_file.stat()
+                    state_file = output_file.with_suffix(".state.json")
+                    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False,
+                                                     dir=output_file.parent, suffix=".tmp") as stream:
+                        temporary_path = Path(stream.name)
+                        json.dump({"version": 1, "sources": signatures[source_date],
+                                   "output": [output_stat.st_size, output_stat.st_mtime_ns]}, stream)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary_path, state_file)
+                    logger.info("날짜별 로그 통합 완료: %s (SN %d개)",
+                                self.merged_file, len({key[0] for key in latest}))
+                return True
+            except Exception:
+                logger.exception("날짜별 로그 통합 실패. 완료되지 않은 날짜는 다음 주기에 재시도합니다.")
+                return False
+            finally:
+                if temporary_path is not None and temporary_path.exists():
+                    try:
+                        temporary_path.unlink()
+                    except OSError:
+                        logger.exception("통합 임시 파일을 정리하지 못했습니다: %s", temporary_path)
+
     def save_result(self, result: Dict[str, any]) -> bool:
+        with self._lock:
+            result = dict(result)
+            if result.get("timestamp") is None:
+                result["timestamp"] = datetime.now().isoformat()
+            saved = self._save_result(result)
+            if saved:
+                output_file = self._result_output_file(result)
+                day = datetime.strptime(output_file.parent.name, "%y%m%d").date()
+                # 통합 실패로 이미 저장된 원본을 재저장하지 않는다. 백그라운드에서 재시도한다.
+                self.consolidate_previous_days(only_date=day)
+            return saved
+
+    def _save_result(self, result: Dict[str, any]) -> bool:
         """
         단일 결과를 CSV 파일에 저장 (append 모드)
         
@@ -142,7 +295,6 @@ class ResultWriter:
                 
                 # 데이터 행 작성
                 writer.writerow(csv_row)
-            
             logger.debug(f"결과 저장 완료: {output_file}")
             return True
             
@@ -186,7 +338,7 @@ class ResultWriter:
         if timestamp is None:
             timestamp = datetime.now().isoformat()
         
-        # 파일명 (확장자 포함 전체 파일명)
+        # SN은 마지막 확장자만 제거한 전체 파일명
         input_filename = result.get('input_file', 'unknown')
         
         # 숫자 값 포맷팅 (소수점 적절히)
@@ -202,7 +354,7 @@ class ResultWriter:
         
         return {
             'Timestamp': timestamp,
-            'Input_Filename': input_filename,
+            'SN': Path(input_filename).stem,
             'dBFS': "" if dbfs is None else f"{float(dbfs):.2f}",
             'Vrms': f"{vrms:.6f}",
             'LSB': f"{lsb:.2f}",
@@ -229,10 +381,10 @@ class ResultWriter:
         try:
             results = []
             for output_file in result_files:
-                with open(output_file, 'r', newline='', encoding='utf-8') as f:
+                with open(output_file, 'r', newline='', encoding='utf-8-sig') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        results.append(row)
+                        results.append(self._normalize_csv_row(row))
             
             # 최근 결과부터 반환 (마지막 행이 최신)
             return list(reversed(results))[:limit]
@@ -295,14 +447,20 @@ class ResultWriter:
         Returns:
             성공 시 True, 실패 시 False
         """
-        try:
-            for output_file in self._iter_result_files():
-                output_file.unlink()
-            logger.info("결과 파일 초기화 완료")
-            return True
-        except Exception as e:
-            logger.error(f"결과 파일 초기화 중 오류: {e}")
-            return False
+        with self._lock:
+            try:
+                for output_file in self._iter_result_files():
+                    output_file.unlink()
+                for output_file in (self.output_dir / "merged").glob("*/*_RANC_XYZ.csv"):
+                    output_file.unlink()
+                for state_file in (self.output_dir / "merged").glob("*/*_RANC_XYZ.state.json"):
+                    state_file.unlink()
+                (self.output_dir / "merged" / "RANC_by_SN.csv").unlink(missing_ok=True)
+                logger.info("결과 파일 초기화 완료")
+                return True
+            except Exception as e:
+                logger.error(f"결과 파일 초기화 중 오류: {e}")
+                return False
 
 
 if __name__ == "__main__":
@@ -360,6 +518,6 @@ if __name__ == "__main__":
     recent = writer.get_recent_results(5)
     print(f"\n최근 결과 ({len(recent)}개):")
     for i, row in enumerate(recent):
-        print(f"  {i+1}. {row['Input_Filename']}: {row['Judgement']} (Vrms={row['Vrms']})")
+        print(f"  {i+1}. {row['SN']}: {row['Judgement']} (Vrms={row['Vrms']})")
     
     print(f"\n테스트 완료. 결과 디렉토리: {writer.output_dir}")
