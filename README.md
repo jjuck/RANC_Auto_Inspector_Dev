@@ -15,17 +15,9 @@ RANC Auto Inspector는 생산 공정에서 생성되는 CSV 로그 파일을 실
 
 ## 시스템 아키텍처
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   CSV 파일 생성  │───▶│   파일 감시 데몬  │───▶│   처리 엔진     │
-│  (data/input_logs)│    │  (FileWatcher)  │    │ (CSVProcessor)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                                         │
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   웹 대시보드    │◀───│   WebSocket     │◀───│   결과 브로드캐스트│
-│  (frontend/)    │    │   서버          │    │  (ResultWriter)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+[![RANC Auto Inspector 시스템 아키텍처](docs/architecture/preview.png)](https://jjuck.github.io/RANC_Auto_Inspector_Dev/architecture/)
+
+이미지를 클릭하면 구성 요소와 소스 근거를 탐색하는 [대화형 구조도](https://jjuck.github.io/RANC_Auto_Inspector_Dev/architecture/)가 열립니다. [소스 커밋 `ef5b508`](https://github.com/jjuck/RANC_Auto_Inspector_Dev/tree/ef5b508d349d9be25b13e97ddcec02d60103d684) 기준 스냅샷이며, 로컬에서는 [HTML 파일](docs/architecture/index.html)을 브라우저로 열 수 있습니다. 설명은 한국어, 고정 Viewer UI는 영어입니다.
 
 ## 빠른 시작
 

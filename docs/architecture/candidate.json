@@ -1,0 +1,372 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RANC Auto Inspector · CSV 검사와 실시간 대시보드",
+    "locale": "en",
+    "output": "docs/architecture/index.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/jjuck/RANC_Auto_Inspector_Dev.git",
+      "revision": "ef5b508d349d9be25b13e97ddcec02d60103d684",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "input",
+      "type": "database",
+      "label": "입력 CSV",
+      "sublabel": "data/input_logs/",
+      "pos": [
+        40,
+        344
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "sources": [
+        {
+          "path": "src/integrated_server.py",
+          "line": 33,
+          "end_line": 43,
+          "label": "입력·출력 경로"
+        },
+        {
+          "path": "src/csv_processor.py",
+          "line": 26,
+          "end_line": 89,
+          "label": "입력 파일 실제 읽기"
+        }
+      ]
+    },
+    {
+      "id": "watcher",
+      "type": "backend",
+      "label": "FileWatcher",
+      "sublabel": "watchdog · 생성 이벤트",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        240,
+        80
+      ],
+      "sources": [
+        {
+          "path": "src/file_watcher.py",
+          "line": 28,
+          "end_line": 49,
+          "label": "CSV 생성 콜백"
+        },
+        {
+          "path": "src/file_watcher.py",
+          "line": 73,
+          "end_line": 91,
+          "label": "하위 폴더 제외 감시"
+        }
+      ]
+    },
+    {
+      "id": "daemon",
+      "type": "backend",
+      "label": "AutoInspectorDaemon",
+      "sublabel": "CSVProcessor 읽기 · 2초 중복 방지",
+      "pos": [
+        470,
+        340
+      ],
+      "size": [
+        270,
+        88
+      ],
+      "sources": [
+        {
+          "path": "src/integrated_server.py",
+          "line": 127,
+          "end_line": 208,
+          "label": "추출·계산·저장·전송 제어"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 230,
+          "end_line": 245,
+          "label": "감시 스레드·콜백 연결"
+        },
+        {
+          "path": "src/csv_processor.py",
+          "line": 26,
+          "end_line": 134,
+          "label": "Ch1 RMS dBFS·Noise FS 읽기"
+        }
+      ]
+    },
+    {
+      "id": "math",
+      "type": "backend",
+      "label": "변환과 판정",
+      "sublabel": "Vrms · LSB · SENS · g / PASS·FAIL",
+      "pos": [
+        880,
+        60
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "sources": [
+        {
+          "path": "src/calculator.py",
+          "line": 15,
+          "end_line": 61,
+          "label": "dBFS의 선형 변환"
+        },
+        {
+          "path": "src/judge.py",
+          "line": 13,
+          "end_line": 60,
+          "label": "상·하한 포함 판정"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 150,
+          "end_line": 183,
+          "label": "값 전달·결과 조립"
+        }
+      ]
+    },
+    {
+      "id": "writer",
+      "type": "backend",
+      "label": "ResultWriter",
+      "sublabel": "헤더·행 기록 / 시작 시 통계 읽기",
+      "pos": [
+        880,
+        340
+      ],
+      "size": [
+        280,
+        88
+      ],
+      "sources": [
+        {
+          "path": "src/result_writer.py",
+          "line": 18,
+          "end_line": 109,
+          "label": "파일 설정·실제 CSV 쓰기"
+        },
+        {
+          "path": "src/result_writer.py",
+          "line": 132,
+          "end_line": 170,
+          "label": "Noise_Level 포함 결과 행"
+        },
+        {
+          "path": "src/result_writer.py",
+          "line": 200,
+          "end_line": 233,
+          "label": "저장 CSV 통계 읽기"
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "type": "database",
+      "label": "누적 검사 결과",
+      "sublabel": "data/output_results/inspection_results.csv",
+      "pos": [
+        880,
+        680
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "sources": [
+        {
+          "path": "src/result_writer.py",
+          "line": 18,
+          "end_line": 40,
+          "label": "결과 파일명·컬럼"
+        },
+        {
+          "path": "src/result_writer.py",
+          "line": 91,
+          "end_line": 102,
+          "label": "기존 파일에 행 추가"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 33,
+          "end_line": 38,
+          "label": "data/output_results 경로"
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "type": "backend",
+      "label": "FastAPI 통합 서버",
+      "sublabel": "Uvicorn :8000 · WebSocketManager",
+      "pos": [
+        470,
+        680
+      ],
+      "size": [
+        270,
+        88
+      ],
+      "sources": [
+        {
+          "path": "src/integrated_server.py",
+          "line": 59,
+          "end_line": 103,
+          "label": "new_result JSON 전송"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 271,
+          "end_line": 318,
+          "label": "lifespan의 데몬·루프 관리"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 331,
+          "end_line": 441,
+          "label": "HTTP·/ws·정적 파일·진입점"
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "브라우저 대시보드",
+      "sublabel": "기본 / · 대체 /alt",
+      "pos": [
+        40,
+        680
+      ],
+      "size": [
+        240,
+        88
+      ],
+      "sources": [
+        {
+          "path": "frontend/dashboard.js",
+          "line": 445,
+          "end_line": 505,
+          "label": "/ws 수신·화면·메모리 이력"
+        },
+        {
+          "path": "frontend_alt/dashboard.js",
+          "line": 445,
+          "end_line": 505,
+          "label": "대체 UI의 같은 결과 수신"
+        },
+        {
+          "path": "src/integrated_server.py",
+          "line": 344,
+          "end_line": 365,
+          "label": "두 UI의 HTML·JS 제공"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "created",
+      "from": "input",
+      "to": "watcher",
+      "label": "새 .csv만 감지",
+      "variant": "dashed"
+    },
+    {
+      "id": "callback",
+      "from": "watcher",
+      "to": "daemon",
+      "label": "파일 경로 콜백"
+    },
+    {
+      "id": "read-csv",
+      "from": "input",
+      "to": "daemon",
+      "label": "Ch1 읽기",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "convert-judge",
+      "from": "daemon",
+      "to": "math",
+      "label": "dBFS 추출 성공 시"
+    },
+    {
+      "id": "save-result",
+      "from": "daemon",
+      "to": "writer",
+      "label": "결과 저장 요청"
+    },
+    {
+      "id": "persist",
+      "from": "writer",
+      "to": "results",
+      "label": "CSV 쓰기·통계 읽기"
+    },
+    {
+      "id": "lifespan-start",
+      "from": "server",
+      "to": "daemon",
+      "label": "시작·루프 전달",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "schedule-broadcast",
+      "from": "daemon",
+      "to": "server",
+      "label": "루프 있으면 전송 예약",
+      "fromSide": "left",
+      "toSide": "left",
+      "variant": "dashed"
+    },
+    {
+      "id": "serve-push",
+      "from": "server",
+      "to": "dashboard",
+      "label": "HTTP · /ws JSON",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "단일 런타임과 사용자 흐름",
+      "items": [
+        "run.bat / run.sh → python -m src.integrated_server. FastAPI lifespan이 데몬과 감시 스레드를 시작·종료합니다.",
+        "브라우저는 / 또는 /alt에서 화면을 받고 /ws의 new_result로 값과 이력을 갱신합니다. /health는 상태 확인용입니다."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "실제 처리 조건",
+      "items": [
+        "감시는 하위 폴더를 제외하고 새 .csv 생성만 처리하며 0.1초 기다립니다. 데몬은 같은 파일명을 2초 내 다시 처리하지 않습니다.",
+        "Ch1 RMS dBFS를 못 읽으면 중단합니다. Noise FS는 부가 로그값이며 추출 실패 시 빈 컬럼으로 저장합니다.",
+        "판정 범위는 468.6/8192 ≤ Vrms ≤ 572.7/8192. 파일 저장 실패 자체는 전송을 막지 않으며 메인 루프가 있어야 전송 예약합니다."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "저장과 표시의 경계",
+      "items": [
+        "ResultWriter가 결과 CSV를 쓰고 시작 통계를 읽습니다. 브로드캐스트는 데몬이 WebSocketManager에 요청합니다.",
+        "브라우저 이력은 메모리의 최대 20건입니다. 서버의 request_history 분기는 미구현이며 Noise Level 전용 화면은 없습니다.",
+        "커밋 ef5b508 기준 스냅샷입니다. 설명은 한국어이며 고정 Viewer UI와 HTML 언어는 영어입니다."
+      ]
+    }
+  ]
+}

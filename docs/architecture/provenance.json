@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "generator": {
+    "name": "Archify",
+    "version": "3.0.1",
+    "quality": "showcase"
+  },
+  "repository": {
+    "url": "https://github.com/jjuck/RANC_Auto_Inspector_Dev.git",
+    "revision": "ef5b508d349d9be25b13e97ddcec02d60103d684"
+  },
+  "hashes": {
+    "preview_png_sha256": "9dd697e629c5b6fce18b3a864256ee836f75208e498f84f6dd570483116735aa",
+    "portable_candidate_sha256": "2de927940df3cb31e8df0ce76870e9412cb4afd90acde8f6c90f75f852f864b9",
+    "published_html_sha256": "fe237e5fbd869b0a88997f766325c95059641dd79a2845c6ed7058d66de5d07b",
+    "finalized_specification_sha256": "994707d4f8e8794ed6437f6b0ff8abecd3669c1e332ac26f6fd488e0ae1467db",
+    "original_html_sha256": "732b0c08e5547a592193daf2f3324536b7eee8f730ec68a5c65f3d692e255ac5"
+  },
+  "transformations": [
+    "Published HTML: removed whitespace from whitespace-only lines; no nonblank content changed.",
+    "Portable candidate: meta.output changed to docs/architecture/index.html; topology, labels and evidence unchanged."
+  ],
+  "checks": {
+    "published_html": "blank-line normalization equivalence verified; original browser evidence binds original hash",
+    "automated_browser": "passed on original finalized HTML",
+    "finalizer": "passed",
+    "visual_review": "corrected diagram inspected in light/dark 1440x900 captures; full result path fits; main review pending",
+    "warnings": 0,
+    "capture": "passed: light/dark 1440x900 and 2048x1320",
+    "showcase_checks": "9/9",
+    "errors": 0
+  },
+  "preview": {
+    "viewport": "1440x900",
+    "theme": "light",
+    "artifact_binding": "original_html_sha256"
+  },
+  "old_graph_corrections": [
+    "ResultWriter persists CSV; AutoInspectorDaemon separately schedules WebSocketManager broadcasts.",
+    "One FastAPI/Uvicorn runtime serves both dashboards, /ws and /health, and owns daemon lifespan.",
+    "Explicit input reads, conversion/judgement, accumulated CSV and actual conditions replace the simplified chain."
+  ],
+  "update": {
+    "available": "3.0.1",
+    "installed": "3.0.1",
+    "notice_required": false
+  },
+  "source_review_correction": "Result store sublabel corrected to data/output_results/inspection_results.csv; geometry and all other semantics unchanged."
+}
